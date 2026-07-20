@@ -594,6 +594,7 @@ function exerciseNode(item, idx){
     const open=li.classList.toggle("open");
     btn.setAttribute("aria-expanded",open?"true":"false");
     if(open && window.WT) WT.opened(item);
+    if(window.WT) open ? WT.uiOpen() : WT.uiClose();
   };
   li.appendChild(btn); li.appendChild(detail);
   if(idx!=null && !locked && window.WT) WT.decorate(detail,item);
@@ -957,17 +958,18 @@ function celebrate(num, dur, vol, n){
     Array.from({length:7},(_,i)=>'<span class="spk" style="left:'+(12+i*12)+'%;top:'+(38+(i%3)*14)+'%;animation-delay:'+(i*0.09)+'s">✦</span>').join("")+
     '<div class="big">#'+(num??"—")+'</div>'+
     '<div class="sub2">WORKOUT COMPLETE<br>'+fmtDur(dur)+' · '+n+' set'+(n===1?'':'s')+' · '+vol.toLocaleString()+' lb moved</div>';
-  o.onclick=()=>o.remove();
+  o.onclick=()=>{ if(o.isConnected){ o.remove(); uiClose(); } };
   document.body.appendChild(o);
+  uiOpen();
   if(navigator.vibrate) navigator.vibrate([100,60,100,60,200]);
-  setTimeout(()=>o.remove(), 6000);
+  setTimeout(()=>{ if(o.isConnected){ o.remove(); uiClose(); } }, 6000);
 }
 
 /* ---------- global history ---------- */
 async function openHist(){
   const sh=document.getElementById("sheet");
   sh.innerHTML='<h3>History</h3><div class="sub">loading…</div>';
-  sw2.classList.add("on");
+  if(!sw2.classList.contains("on")){ sw2.classList.add("on"); uiOpen(); }
   if(!session || !navigator.onLine){ sh.innerHTML='<h3>History</h3><div class="sub">needs connection + sign-in</div>'; return; }
   const { data, count } = await sb.from("workout_sessions")
     .select("*",{count:"exact"}).order("session_date",{ascending:false}).limit(400);
@@ -998,7 +1000,20 @@ async function openDay(d){
 const sw2=document.createElement("div");
 sw2.className="sheetwrap"; sw2.innerHTML='<div class="sheet" id="sheet"></div>';
 document.body.appendChild(sw2);
-sw2.onclick=e=>{ if(e.target===sw2) sw2.classList.remove("on"); };
+sw2.onclick=e=>{ if(e.target===sw2){ sw2.classList.remove("on"); uiClose(); } };
+
+/* ---------- back button closes UI layers instead of the app ---------- */
+function uiOpen(){ history.pushState({wt:1}, ""); }
+function uiClose(){ if(history.state && history.state.wt) history.back(); }
+window.addEventListener("popstate", ()=>{
+  const cel=document.querySelector(".celebr");
+  if(cel){ cel.remove(); return; }
+  if(sw2.classList.contains("on")){ sw2.classList.remove("on"); return; }
+  document.querySelectorAll(".ex.open").forEach(li=>{
+    li.classList.remove("open");
+    li.querySelector(".ex-btn")?.setAttribute("aria-expanded","false");
+  });
+});
 
 function openSheet(name, isRetry){
   const h=hist[name], sh=document.getElementById("sheet");
@@ -1032,7 +1047,7 @@ function openSheet(name, isRetry){
       '<div class="stat"><div class="n">'+(tSets.length||"—")+'</div><div class="l">sets today</div></div>'+
     '</div>'+ charts +
     (rows?'<div class="chartlbl">all sessions ('+(h?.recent||[]).length+')</div><table class="sesstable">'+rows+'</table>':'<div class="sub">no history yet</div>');
-  sw2.classList.add("on");
+  if(!sw2.classList.contains("on")){ sw2.classList.add("on"); uiOpen(); }
   if(!isRetry && session && navigator.onLine && (!h || Date.now()-h.at > 6*3600e3))
     fetchHist(name).then(()=>{ if(sw2.classList.contains("on")) openSheet(name, true); });
 }
@@ -1065,7 +1080,7 @@ function authRow(){
 sb.auth.onAuthStateChange((_e,s)=>{ session=s; authRow(); if(s) sync(); });
 window.addEventListener("online", sync);
 
-window.WT = { decorate, opened, authRow, completeBar };
+window.WT = { decorate, opened, authRow, completeBar, uiOpen, uiClose };
 render();
 sync();
 </script>
