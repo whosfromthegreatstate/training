@@ -143,7 +143,7 @@ ol.list{list-style:none;margin:0;padding:0}
 .stat{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
 .stat .n{font-family:var(--mono);font-size:20px;font-weight:800;color:var(--signal)}
 .stat .l{font-family:var(--mono);font-size:8.5px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
-.sheet .spark2 svg{width:100%;height:56px;display:block;margin:6px 0 14px}
+.sheet .spark2 svg{width:100%;height:auto;display:block;margin:6px 0 10px}
 .sesstable{width:100%;font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--muted)}
 .sesstable td:first-child{color:var(--text);white-space:nowrap;padding-right:12px;vertical-align:top}
 .statrow{flex-wrap:wrap}
@@ -747,7 +747,8 @@ async function fetchHist(name){
   const spark = days.slice(0,60).map(d=>{
     const best = Math.max(...sessions[d].map(r=>e1rm(r.weight_lb,r.reps)||0));
     const vol = sessions[d].reduce((a,r)=>a+(r.weight_lb||0)*(r.reps||0),0);
-    return { d, e1: best, vol: Math.round(vol) };
+    const maxw = Math.max(0,...sessions[d].map(r=>r.weight_lb||0));
+    return { d, e1: best, vol: Math.round(vol), maxw };
   }).reverse();
   let best = {e1:0,d:null,w:null,r:null};
   sane.forEach(r=>{ const e=e1rm(r.weight_lb,r.reps); if(e && e>best.e1) best={e1:e,d:r.session_date,w:r.weight_lb,r:r.reps}; });
@@ -1021,20 +1022,35 @@ function openSheet(name, isRetry){
   const todayBest=Math.max(0,...tSets.map(s=>e1rm(s.weight_lb,s.reps)||0));
   const totalSets=(h?.recent||[]).reduce((a,s)=>a+s.sets.length,0);
   const todayVol=Math.round(tSets.reduce((a,s)=>a+(s.weight_lb||0)*s.reps,0));
-  const lineSvg=(vals,color)=>{
-    const mn=Math.min(...vals), mx=Math.max(...vals), rng=(mx-mn)||1, W=320, H=56;
-    const pts=vals.map((v,i)=>(i/(vals.length-1)*W).toFixed(1)+","+(H-6-((v-mn)/rng*(H-12))).toFixed(1)).join(" ");
-    return '<div class="spark2"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
-      '<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="1.5"/></svg></div>';
+  /* time-scaled line chart with subtle labeled reference lines */
+  const lineSvg=(pts,color)=>{
+    const W=320,H=86,PL=4,PR=30,PT=8,PB=15;
+    const t0=pts[0].t, t1=pts[pts.length-1].t, tr=(t1-t0)||1;
+    const vs=pts.map(p=>p.v), mn=Math.min(...vs), mx=Math.max(...vs), rng=(mx-mn)||1;
+    const X=t=>PL+(t-t0)/tr*(W-PL-PR), Y=v=>PT+(1-(v-mn)/rng)*(H-PT-PB);
+    const line=pts.map(p=>X(p.t).toFixed(1)+","+Y(p.v).toFixed(1)).join(" ");
+    const refs=[...new Set([mx,(mn+mx)/2,mn].map(Math.round))].map(v=>
+      '<line x1="'+PL+'" y1="'+Y(v).toFixed(1)+'" x2="'+(W-PR)+'" y2="'+Y(v).toFixed(1)+'" stroke="#28313E" stroke-dasharray="2 4" stroke-width="0.7"/>'+
+      '<text x="'+(W-PR+3)+'" y="'+(Y(v)+2.5).toFixed(1)+'" font-size="7.5" fill="#566374" font-family="ui-monospace,monospace">'+v.toLocaleString()+'</text>').join("");
+    const fmt=t=>{const d=new Date(t); return (d.getMonth()+1)+"/"+String(d.getFullYear()).slice(2);};
+    const xts=[...new Set([t0,(t0+t1)/2,t1].map(fmt))];
+    const xt=xts.map((lab,i)=>{const t=[t0,(t0+t1)/2,t1][i];
+      return '<text x="'+X(t).toFixed(1)+'" y="'+(H-3)+'" text-anchor="'+(i===0?"start":i===xts.length-1?"end":"middle")+'" font-size="7.5" fill="#566374" font-family="ui-monospace,monospace">'+lab+'</text>';}).join("");
+    return '<div class="spark2"><svg viewBox="0 0 '+W+' '+H+'">'+refs+xt+
+      '<polyline points="'+line+'" fill="none" stroke="'+color+'" stroke-width="1.5"/></svg></div>';
   };
   let charts="";
   const sp=h?.spark;
   if(sp && sp.length>=3){
+    const P=k=>sp.map(p=>({t: p.t || new Date(p.d+"T12:00").getTime(), v: p[k]||0}));
     charts =
-      '<div class="chartlbl">e1RM · '+sp[0].d+' → '+sp[sp.length-1].d+' · peak '+Math.max(...sp.map(p=>p.e1))+'</div>'+
-      lineSvg(sp.map(p=>p.e1), "#6FD3E8")+
-      '<div class="chartlbl">session volume (lb) · peak '+Math.max(...sp.map(p=>p.vol||0)).toLocaleString()+'</div>'+
-      lineSvg(sp.map(p=>p.vol||0), "#FFC93C");
+      '<div class="chartlbl">e1RM · peak '+Math.max(...sp.map(p=>p.e1))+'</div>'+
+      lineSvg(P("e1"), "#6FD3E8");
+    if(sp.some(p=>p.maxw>0))
+      charts += '<div class="chartlbl">top weight of day · peak '+Math.max(...sp.map(p=>p.maxw||0))+'</div>'+
+        lineSvg(P("maxw"), "#E88B4A");
+    charts += '<div class="chartlbl">session volume (lb) · peak '+Math.max(...sp.map(p=>p.vol||0)).toLocaleString()+'</div>'+
+      lineSvg(P("vol"), "#FFC93C");
   }
   const rows=(h?.recent||[]).map(s=>"<tr><td>"+s.d+"</td><td>"+
     s.sets.map(x=>(x[0]??"bw")+"×"+x[1]).join("  ")+"</td></tr>").join("");
