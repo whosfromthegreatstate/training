@@ -826,14 +826,8 @@ function authRow(){
     el.querySelector("#send").onclick=async()=>{
       const email=el.querySelector("#em").value.trim();
       const {error}=await sb.auth.signInWithOtp({email, options:{shouldCreateUser:false}});
-      if(error){ el.append(" — "+error.message); return; }
-      el.innerHTML='<input id="code" inputmode="numeric" placeholder="6-digit code">'+
-        '<button id="ver">Verify</button>';
-      el.querySelector("#ver").onclick=async()=>{
-        const {data,error}=await sb.auth.verifyOtp({email, token:el.querySelector("#code").value.trim(), type:"email"});
-        if(error){ el.append(" — "+error.message); return; }
-        session=data.session; sync();
-      };
+      el.innerHTML = error ? "error — "+error.message
+        : "link sent · open the email on this device and tap the sign-in link";
     };
   };
 }
