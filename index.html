@@ -682,15 +682,16 @@ async function fetchHist(name){
     .select("id,logged_at,session_date,exercise,weight_lb,reps")
     .in("exercise", names).order("logged_at",{ascending:false}).limit(400);
   if(error || !data) return;
+  const sane = data.filter(r=>r.weight_lb==null || r.weight_lb<600);  // typo guard
   const sessions = {};
-  data.forEach(r=>{ (sessions[r.session_date] ??= []).push(r); });
+  sane.forEach(r=>{ (sessions[r.session_date] ??= []).push(r); });
   const days = Object.keys(sessions).sort().reverse();
   const spark = days.slice(0,30).map(d=>{
     const best = Math.max(...sessions[d].map(r=>e1rm(r.weight_lb,r.reps)||0));
     return { d, e1: best };
   }).reverse();
   let best = {e1:0,d:null,w:null,r:null};
-  data.forEach(r=>{ const e=e1rm(r.weight_lb,r.reps); if(e && e>best.e1) best={e1:e,d:r.session_date,w:r.weight_lb,r:r.reps}; });
+  sane.forEach(r=>{ const e=e1rm(r.weight_lb,r.reps); if(e && e>best.e1) best={e1:e,d:r.session_date,w:r.weight_lb,r:r.reps}; });
   const t = todayISO();
   const lastDay = days.find(d=>d<t);
   hist[name] = { at: Date.now(), spark, best,
