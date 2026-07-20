@@ -146,6 +146,35 @@ ol.list{list-style:none;margin:0;padding:0}
 .sheet .spark2 svg{width:100%;height:56px;display:block;margin:6px 0 14px}
 .sesstable{width:100%;font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--muted)}
 .sesstable td:first-child{color:var(--text);white-space:nowrap;padding-right:12px;vertical-align:top}
+.statrow{flex-wrap:wrap}
+.statrow .stat{flex:1 1 30%}
+.chip.editing{border-color:var(--signal);color:var(--signal)}
+.editlinks{margin-top:8px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.editlinks a{cursor:pointer;margin-right:16px}
+.editlinks .del{color:var(--sub)}
+.editlinks .can{color:var(--dim)}
+.wclock{color:var(--cold)}
+.completebtn{display:block;width:100%;margin:26px 0 0;min-height:54px;background:var(--surface);
+  border:1px solid var(--signal);border-radius:12px;color:var(--signal);font-family:var(--mono);
+  font-size:13px;font-weight:800;letter-spacing:.14em;cursor:pointer}
+.completebtn:active{background:var(--signal);color:#0F1319}
+.celebr{position:fixed;inset:0;z-index:120;background:rgba(6,9,13,.9);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;cursor:pointer}
+.celebr .big{font-size:64px;font-weight:800;letter-spacing:-.04em;color:var(--signal);
+  animation:pop .5s cubic-bezier(.2,1.6,.4,1)}
+.celebr .sub2{font-family:var(--mono);font-size:13px;color:var(--text);margin-top:10px;line-height:2}
+.celebr .spk{position:absolute;font-size:22px;color:var(--signal);animation:spk 1.1s ease-out forwards}
+@keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes spk{0%{transform:translateY(0) scale(.4);opacity:0}25%{opacity:1}
+  100%{transform:translateY(-90px) scale(1.15);opacity:0}}
+.chartlbl{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--dim);margin-top:14px}
+.histrows{margin-top:6px}
+.histrow{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);cursor:pointer}
+.histrow b{color:var(--text);font-weight:600}
+.backlink{display:inline-block;margin-bottom:10px;font-family:var(--mono);font-size:11px;
+  color:var(--cold);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
 .plates{font-family:var(--mono);font-size:11px;color:var(--cold);margin-top:8px;letter-spacing:.04em}
 .plates b{color:var(--muted);cursor:pointer;text-decoration:underline dotted}
 .ghost{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:6px}
@@ -675,7 +704,8 @@ let local = LS.get("wt_local", []);      // sets logged on this device
 let dels  = LS.get("wt_dels", []);       // ids deleted locally, pending remote delete
 let hist  = LS.get("wt_hist", {});       // per-exercise cache from server
 let barW  = LS.get("wt_bar", 45);
-const saveLocal = () => { LS.set("wt_local", local); LS.set("wt_dels", dels); };
+let sessq = LS.get("wt_sessq", []);      // completed-workout rows pending sync
+const saveLocal = () => { LS.set("wt_local", local); LS.set("wt_dels", dels); LS.set("wt_sessq", sessq); };
 
 /* ---------- sync ---------- */
 let session = null;
@@ -684,12 +714,16 @@ async function sync(){
   const pending = local.filter(s=>!s.synced);
   if(pending.length){
     const rows = pending.map(({synced,...r})=>r);
-    const { error } = await sb.from(TABLE).upsert(rows, { onConflict:"id", ignoreDuplicates:true });
+    const { error } = await sb.from(TABLE).upsert(rows, { onConflict:"id" });
     if(!error) pending.forEach(s=>s.synced=true);
   }
   for(const id of [...dels]){
     const { error } = await sb.from(TABLE).delete().eq("id", id);
     if(!error) dels = dels.filter(x=>x!==id);
+  }
+  for(const row of [...sessq]){
+    const { error } = await sb.from("workout_sessions").upsert(row, { onConflict:"session_date" });
+    if(!error) sessq = sessq.filter(x=>x!==row);
   }
   // trim local to last 90 days
   const cutoff = new Date(Date.now()-90*864e5).toISOString().slice(0,10);
@@ -703,15 +737,16 @@ async function fetchHist(name){
   const names = [name, ...(ALIAS[name]||[])];
   const { data, error } = await sb.from(TABLE)
     .select("id,logged_at,session_date,exercise,weight_lb,reps")
-    .in("exercise", names).order("logged_at",{ascending:false}).limit(400);
+    .in("exercise", names).order("logged_at",{ascending:false}).limit(1000);
   if(error || !data) return;
   const sane = data.filter(r=>r.weight_lb==null || r.weight_lb<600);  // typo guard
   const sessions = {};
   sane.forEach(r=>{ (sessions[r.session_date] ??= []).push(r); });
   const days = Object.keys(sessions).sort().reverse();
-  const spark = days.slice(0,30).map(d=>{
+  const spark = days.slice(0,60).map(d=>{
     const best = Math.max(...sessions[d].map(r=>e1rm(r.weight_lb,r.reps)||0));
-    return { d, e1: best };
+    const vol = sessions[d].reduce((a,r)=>a+(r.weight_lb||0)*(r.reps||0),0);
+    return { d, e1: best, vol: Math.round(vol) };
   }).reverse();
   let best = {e1:0,d:null,w:null,r:null};
   sane.forEach(r=>{ const e=e1rm(r.weight_lb,r.reps); if(e && e>best.e1) best={e1:e,d:r.session_date,w:r.weight_lb,r:r.reps}; });
@@ -719,7 +754,7 @@ async function fetchHist(name){
   const lastDay = days.find(d=>d<t);
   hist[name] = { at: Date.now(), spark, best,
     last: lastDay ? { d:lastDay, sets: sessions[lastDay].slice().reverse().map(r=>[r.weight_lb,r.reps]) } : null,
-    recent: days.slice(0,8).map(d=>({ d, sets: sessions[d].slice().reverse().map(r=>[r.weight_lb,r.reps]) })) };
+    recent: days.map(d=>({ d, sets: sessions[d].slice().reverse().map(r=>[r.weight_lb,r.reps]) })) };
   LS.set("wt_hist", hist);
 }
 
@@ -770,8 +805,10 @@ function decorate(detail, item){
       '<button class="hbtn" data-k="r" data-d="1">+</button></div>'+
     '<div class="plates"></div><div class="e1rm"></div><div class="ghost"></div>'+
     '<div class="actrow"><button class="logbtn">LOG SET</button><button class="tbtn" title="rest timer">⏱</button></div>'+
-    '<div class="chips"></div>'+
+    '<div class="chips"></div><div class="editlinks" style="display:none">'+
+    '<a class="del">delete set</a><a class="can">cancel</a></div>'+
     '<a class="statslink">Stats + history ›</a>';
+  let editing = null;   // id of today's set being edited
 
   const q=s=>box.querySelector(s);
   const refresh=()=>{
@@ -787,16 +824,20 @@ function decorate(detail, item){
       (hb?.e1 ? (e?' · ':'')+'best '+hb.e1+' ('+hb.d+')' : '');
     const hl=hist[name]?.last;
     q(".ghost").textContent = hl ? "last · "+hl.d+" · "+hl.sets.map(s=>(s[0]??"bw")+"×"+s[1]).join("  ") : "";
+    q(".logbtn").textContent = editing ? "UPDATE SET" : "LOG SET";
+    q(".editlinks").style.display = editing ? "block" : "none";
     const chips=q(".chips"); chips.innerHTML="";
     todaySets(name).forEach(s=>{
-      const c=document.createElement("span"); c.className="chip"+(s.synced?"":" pend");
+      const c=document.createElement("span");
+      c.className="chip"+(s.synced?"":" pend")+(editing===s.id?" editing":"");
       c.textContent=(s.weight_lb??"bw")+"×"+s.reps;
-      c.onclick=()=>{ if(c.dataset.arm){ local=local.filter(x=>x.id!==s.id);
-          if(s.synced) dels.push(s.id); saveLocal(); sync(); refresh(); }
-        else { c.dataset.arm=1; c.innerHTML=c.textContent+'<span class="x">✕</span>';
-          setTimeout(()=>{delete c.dataset.arm; refresh();},2500); } };
+      c.onclick=()=>{   // tap a set to edit it; tap again to deselect
+        if(editing===s.id){ editing=null; }
+        else { editing=s.id; touched=true; w=s.weight_lb??0; r=s.reps; }
+        refresh(); };
       chips.appendChild(c);
     });
+    WT.completeBar && WT.completeBar();
   };
 
   const adjust=(k,steps,fine)=>{ touched=true;
@@ -828,7 +869,20 @@ function decorate(detail, item){
     if(e.target.tagName==="B"){ barW = barW===45?55:45; LS.set("wt_bar",barW); refresh(); } };
   box.querySelector(".tbtn").onclick=()=>startTimer(/5×3|4×5/.test(item.load||"")?180:90, name);
   box.querySelector(".statslink").onclick=()=>openSheet(name);
+  box.querySelector(".editlinks .del").onclick=()=>{
+    const s=local.find(x=>x.id===editing); if(!s) { editing=null; refresh(); return; }
+    local=local.filter(x=>x.id!==s.id); if(s.synced) dels.push(s.id);
+    editing=null; saveLocal(); sync(); refresh(); };
+  box.querySelector(".editlinks .can").onclick=()=>{ editing=null; refresh(); };
   box.querySelector(".logbtn").onclick=()=>{
+    if(editing){
+      const s=local.find(x=>x.id===editing);
+      if(s){ s.weight_lb=w||null; s.reps=r; s.synced=false; }
+      editing=null; saveLocal(); sync(); refresh(); return;
+    }
+    if(LS.get("wt_start_d")!==todayISO()){
+      LS.set("wt_start", new Date().toISOString()); LS.set("wt_start_d", todayISO());
+    }
     local.push({ id:crypto.randomUUID(), logged_at:new Date().toISOString(),
       session_date:todayISO(), exercise:name, weight_lb:w||null, reps:r,
       source:"app", synced:false });
@@ -845,6 +899,96 @@ function opened(item){
   if(!h || Date.now()-h.at > 6*3600e3) fetchHist(item.n).then(()=>refreshers[item.n]?.());
 }
 
+/* ---------- workout clock + complete ---------- */
+const todayAll = () => local.filter(s=>s.session_date===todayISO());
+const fmtDur = s => s>=3600 ? Math.floor(s/3600)+"h "+Math.floor(s%3600/60)+"m" : Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
+const workoutActive = () => LS.get("wt_start_d")===todayISO() && LS.get("wt_done")!==todayISO();
+
+setInterval(()=>{
+  let c=document.getElementById("wclock");
+  if(!workoutActive()){ c&&c.remove(); return; }
+  if(!c){ const cd=document.getElementById("ctx-date");
+    if(!cd || !/DAY/.test(cd.textContent)) return;
+    c=document.createElement("span"); c.id="wclock"; c.className="wclock";
+    cd.appendChild(c); }
+  c.textContent=" · "+fmtDur((Date.now()-new Date(LS.get("wt_start")))/1000);
+},1000);
+
+function completeBar(){
+  let b=document.getElementById("completebtn");
+  const want = todayAll().length>0;
+  if(!want){ b&&b.remove(); return; }
+  if(!b){
+    b=document.createElement("button"); b.id="completebtn"; b.className="completebtn";
+    const foot=document.querySelector(".foot");
+    foot.parentNode.insertBefore(b, foot);
+    b.onclick=completeWorkout;
+  }
+  b.textContent = LS.get("wt_done")===todayISO() ? "UPDATE COMPLETED WORKOUT" : "COMPLETE WORKOUT";
+}
+
+async function completeWorkout(){
+  const sets=todayAll();
+  const started=LS.get("wt_start") || sets[0]?.logged_at || new Date().toISOString();
+  const dur=Math.max(60, Math.round((Date.now()-new Date(started))/1000));
+  const vol=Math.round(sets.reduce((a,s)=>a+(s.weight_lb||0)*s.reps,0));
+  const row={ session_date:todayISO(), started_at:started, completed_at:new Date().toISOString(),
+    duration_sec:dur, sets_count:sets.length, volume_lb:vol, source:"app" };
+  const first = LS.get("wt_done")!==todayISO();
+  LS.set("wt_done", todayISO());
+  let num=null;
+  if(session && navigator.onLine){
+    const { error } = await sb.from("workout_sessions").upsert(row, { onConflict:"session_date" });
+    if(!error){ const { count } = await sb.from("workout_sessions").select("*",{count:"exact",head:true}); num=count; }
+    else { sessq.push(row); saveLocal(); }
+  } else { sessq.push(row); saveLocal(); }
+  completeBar();
+  if(first) celebrate(num, dur, vol, sets.length);
+}
+
+function celebrate(num, dur, vol, n){
+  const o=document.createElement("div"); o.className="celebr";
+  o.innerHTML =
+    Array.from({length:7},(_,i)=>'<span class="spk" style="left:'+(12+i*12)+'%;top:'+(38+(i%3)*14)+'%;animation-delay:'+(i*0.09)+'s">✦</span>').join("")+
+    '<div class="big">#'+(num??"—")+'</div>'+
+    '<div class="sub2">WORKOUT COMPLETE<br>'+fmtDur(dur)+' · '+n+' set'+(n===1?'':'s')+' · '+vol.toLocaleString()+' lb moved</div>';
+  o.onclick=()=>o.remove();
+  document.body.appendChild(o);
+  if(navigator.vibrate) navigator.vibrate([100,60,100,60,200]);
+  setTimeout(()=>o.remove(), 6000);
+}
+
+/* ---------- global history ---------- */
+async function openHist(){
+  const sh=document.getElementById("sheet");
+  sh.innerHTML='<h3>History</h3><div class="sub">loading…</div>';
+  sw2.classList.add("on");
+  if(!session || !navigator.onLine){ sh.innerHTML='<h3>History</h3><div class="sub">needs connection + sign-in</div>'; return; }
+  const { data, count } = await sb.from("workout_sessions")
+    .select("*",{count:"exact"}).order("session_date",{ascending:false}).limit(400);
+  if(!data){ sh.innerHTML='<h3>History</h3><div class="sub">failed to load</div>'; return; }
+  sh.innerHTML =
+    '<h3>History</h3><div class="sub">'+count+' workouts · since '+(data.at(-1)?.session_date.slice(0,4)||"")+'</div>'+
+    '<div class="histrows">'+data.map((s,i)=>
+      '<div class="histrow" data-d="'+s.session_date+'"><span><b>#'+(count-i)+'</b> '+s.session_date+'</span>'+
+      '<span>'+(s.duration_sec?fmtDur(s.duration_sec):"—")+' · '+(s.sets_count||0)+' sets · '+
+      Math.round(s.volume_lb||0).toLocaleString()+'</span></div>').join("")+'</div>';
+  sh.querySelectorAll(".histrow").forEach(r=>r.onclick=()=>openDay(r.dataset.d));
+}
+
+async function openDay(d){
+  const sh=document.getElementById("sheet");
+  sh.innerHTML='<h3>'+d+'</h3><div class="sub">loading…</div>';
+  const { data } = await sb.from(TABLE).select("exercise,weight_lb,reps,logged_at")
+    .eq("session_date", d).order("logged_at");
+  const by={};
+  (data||[]).forEach(r=>{ (by[r.exercise] ??= []).push((r.weight_lb??"bw")+"×"+r.reps); });
+  sh.innerHTML='<a class="backlink">‹ all workouts</a><h3>'+d+'</h3>'+
+    '<table class="sesstable">'+Object.entries(by).map(([ex,sets])=>
+      '<tr><td>'+ex+'</td><td>'+sets.join("  ")+'</td></tr>').join("")+'</table>';
+  sh.querySelector(".backlink").onclick=openHist;
+}
+
 /* ---------- stats sheet ---------- */
 const sw2=document.createElement("div");
 sw2.className="sheetwrap"; sw2.innerHTML='<div class="sheet" id="sheet"></div>';
@@ -856,15 +1000,21 @@ function openSheet(name, isRetry){
   const tSets=todaySets(name);
   const todayBest=Math.max(0,...tSets.map(s=>e1rm(s.weight_lb,s.reps)||0));
   const totalSets=(h?.recent||[]).reduce((a,s)=>a+s.sets.length,0);
-  let sparkSvg="";
+  const todayVol=Math.round(tSets.reduce((a,s)=>a+(s.weight_lb||0)*s.reps,0));
+  const lineSvg=(vals,color)=>{
+    const mn=Math.min(...vals), mx=Math.max(...vals), rng=(mx-mn)||1, W=320, H=56;
+    const pts=vals.map((v,i)=>(i/(vals.length-1)*W).toFixed(1)+","+(H-6-((v-mn)/rng*(H-12))).toFixed(1)).join(" ");
+    return '<div class="spark2"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
+      '<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="1.5"/></svg></div>';
+  };
+  let charts="";
   const sp=h?.spark;
   if(sp && sp.length>=3){
-    const vals=sp.map(p=>p.e1), mn=Math.min(...vals), mx=Math.max(...vals), rng=(mx-mn)||1;
-    const W=320,H=56;
-    const pts=sp.map((p,i)=>(i/(sp.length-1)*W).toFixed(1)+","+(H-6-((p.e1-mn)/rng*(H-12))).toFixed(1)).join(" ");
-    sparkSvg='<div class="spark2"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
-      '<polyline points="'+pts+'" fill="none" stroke="#6FD3E8" stroke-width="1.5"/></svg></div>'+
-      '<div class="sub">e1RM · last '+sp.length+' sessions · '+sp[0].d+' → '+sp[sp.length-1].d+'</div>';
+    charts =
+      '<div class="chartlbl">e1RM · '+sp[0].d+' → '+sp[sp.length-1].d+' · peak '+Math.max(...sp.map(p=>p.e1))+'</div>'+
+      lineSvg(sp.map(p=>p.e1), "#6FD3E8")+
+      '<div class="chartlbl">session volume (lb) · peak '+Math.max(...sp.map(p=>p.vol||0)).toLocaleString()+'</div>'+
+      lineSvg(sp.map(p=>p.vol||0), "#FFC93C");
   }
   const rows=(h?.recent||[]).map(s=>"<tr><td>"+s.d+"</td><td>"+
     s.sets.map(x=>(x[0]??"bw")+"×"+x[1]).join("  ")+"</td></tr>").join("");
@@ -873,9 +1023,10 @@ function openSheet(name, isRetry){
     '<div class="statrow">'+
       '<div class="stat"><div class="n">'+(h?.best?.e1||"—")+'</div><div class="l">best e1RM'+(h?.best?.d?' · '+h.best.d:'')+'</div></div>'+
       '<div class="stat"><div class="n">'+(todayBest||"—")+'</div><div class="l">today e1RM</div></div>'+
+      '<div class="stat"><div class="n">'+(todayVol?todayVol.toLocaleString():"—")+'</div><div class="l">today vol</div></div>'+
       '<div class="stat"><div class="n">'+(tSets.length||"—")+'</div><div class="l">sets today</div></div>'+
-    '</div>'+ sparkSvg +
-    (rows?'<table class="sesstable">'+rows+'</table>':'<div class="sub">no history yet</div>');
+    '</div>'+ charts +
+    (rows?'<div class="chartlbl">all sessions ('+(h?.recent||[]).length+')</div><table class="sesstable">'+rows+'</table>':'<div class="sub">no history yet</div>');
   sw2.classList.add("on");
   if(!isRetry && session && navigator.onLine && (!h || Date.now()-h.at > 6*3600e3))
     fetchHist(name).then(()=>{ if(sw2.classList.contains("on")) openSheet(name, true); });
@@ -883,10 +1034,13 @@ function openSheet(name, isRetry){
 
 /* ---------- auth ---------- */
 function authRow(){
+  completeBar();
   const el=document.getElementById("authrow"); if(!el) return;
-  const pend = local.filter(s=>!s.synced).length + dels.length;
+  const pend = local.filter(s=>!s.synced).length + dels.length + sessq.length;
   if(session){
-    el.innerHTML = "sync on · "+session.user.email+(pend?" · <b style='color:var(--sub)'>"+pend+" pending</b>":" · up to date");
+    el.innerHTML = "sync on · "+session.user.email+(pend?" · <b style='color:var(--sub)'>"+pend+" pending</b>":" · up to date")+
+      ' · <a id="histlink">history</a>';
+    el.querySelector("#histlink").onclick=openHist;
     return;
   }
   el.innerHTML = 'sync off'+(pend?' · '+pend+' sets waiting':'')+' · <a id="signin">sign in</a>';
@@ -906,7 +1060,7 @@ function authRow(){
 sb.auth.onAuthStateChange((_e,s)=>{ session=s; authRow(); if(s) sync(); });
 window.addEventListener("online", sync);
 
-window.WT = { decorate, opened, authRow };
+window.WT = { decorate, opened, authRow, completeBar };
 render();
 sync();
 </script>
