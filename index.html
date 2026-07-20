@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0F1319">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Training</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>
+:root{
+  --bg:#0F1319; --surface:#161C25; --surface-2:#1D2530; --line:#28313E;
+  --text:#E8EFF7; --muted:#7D8CA1; --dim:#566374;
+  --signal:#FFC93C; --cold:#6FD3E8; --sub:#E88B4A; --locked:#3E4856;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;
+  line-height:1.4;padding:0 0 env(safe-area-inset-bottom);-webkit-font-smoothing:antialiased}
+.wrap{max-width:640px;margin:0 auto;padding:0 16px 80px}
+
+header{padding:calc(env(safe-area-inset-top) + 20px) 0 0}
+.context{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--muted);display:flex;justify-content:space-between;align-items:baseline}
+.context .phase{color:var(--signal)}
+h1{font-size:clamp(30px,8.5vw,42px);line-height:1.02;margin:10px 0 6px;font-weight:800;letter-spacing:-.03em}
+.duration{font-family:var(--mono);font-size:12px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
+
+nav{display:flex;gap:6px;margin:20px 0 8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+nav::-webkit-scrollbar{display:none}
+nav button{flex:1 0 auto;min-width:44px;min-height:52px;background:var(--surface);
+  border:1px solid transparent;border-radius:10px;color:var(--dim);font-family:var(--mono);
+  font-size:11px;font-weight:700;letter-spacing:.1em;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;cursor:pointer;padding:6px 4px;
+  transition:background .12s,color .12s}
+nav button .dot{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.45}
+nav button[data-rest="1"]{color:var(--locked)}
+nav button:hover{background:var(--surface-2)}
+nav button[aria-current="true"]{background:var(--signal);color:#0F1319;border-color:var(--signal)}
+nav button[aria-current="true"] .dot{opacity:1}
+nav button[data-today="1"]:not([aria-current="true"]) .dot{background:var(--signal);opacity:1}
+nav button:focus-visible{outline:2px solid var(--cold);outline-offset:2px}
+
+.block{margin-top:26px}
+.block-head{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);
+  padding-bottom:8px;border-bottom:1px solid var(--line)}
+.block-head .t{color:var(--dim)}
+
+ol.list{list-style:none;margin:0;padding:0}
+.ex{border-bottom:1px solid var(--line)}
+.ex-btn{width:100%;background:none;border:0;padding:15px 0 14px;display:flex;align-items:flex-start;
+  gap:12px;text-align:left;color:inherit;font:inherit;cursor:pointer}
+.ex-btn:focus-visible{outline:2px solid var(--cold);outline-offset:-2px;border-radius:4px}
+.idx{font-family:var(--mono);font-size:11px;color:var(--dim);padding-top:5px;min-width:16px;font-weight:600}
+.ex-main{flex:1;min-width:0}
+.ex-name{font-size:17px;font-weight:650;letter-spacing:-.015em;line-height:1.25}
+.ex-sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.35}
+.gear{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--dim);margin-top:5px}
+.gear.swap{color:var(--sub)}
+.load{font-family:var(--mono);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;text-align:right;padding-top:2px;white-space:nowrap}
+.load .unit{font-size:11px;color:var(--dim);display:block;font-weight:500;letter-spacing:.06em}
+
+.tag{display:inline-block;vertical-align:middle;margin-left:7px;font-family:var(--mono);font-size:9px;
+  letter-spacing:.12em;border-radius:3px;padding:1px 4px;font-weight:700}
+.tag.new{color:var(--cold);border:1px solid var(--cold);opacity:.85}
+.tag.swap{color:var(--sub);border:1px solid var(--sub)}
+
+.ex.locked .ex-name,.ex.locked .load,.ex.locked .ex-sub,.ex.locked .gear{color:var(--locked)}
+
+.detail{display:none;padding:0 0 18px 28px}
+.ex.open .detail{display:block}
+.swapbox{background:rgba(232,139,74,.08);border-left:2px solid var(--sub);padding:10px 12px;
+  margin:2px 0 12px;border-radius:0 6px 6px 0}
+.swapbox b{color:var(--sub);font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+  display:block;margin-bottom:4px}
+.swapbox p{margin:0;font-size:13.5px;color:var(--text);line-height:1.5}
+.cues{margin:0;padding:0;list-style:none}
+.cues li{font-size:14px;color:var(--muted);line-height:1.5;padding:5px 0 5px 14px;position:relative}
+.cues li::before{content:"";position:absolute;left:0;top:12px;width:5px;height:1px;background:var(--dim)}
+.cues li strong{color:var(--text);font-weight:600}
+.demo{display:inline-block;margin-top:10px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--cold);text-decoration:none;border-bottom:1px solid var(--cold);
+  padding-bottom:2px}
+.demo:focus-visible{outline:2px solid var(--cold);outline-offset:3px}
+
+.rest{margin-top:28px;padding:26px 20px;background:var(--surface);border-radius:14px;border:1px solid var(--line)}
+.rest h2{font-size:19px;margin:0 0 8px;font-weight:700;letter-spacing:-.02em}
+.rest p{margin:0 0 12px;color:var(--muted);font-size:14px;line-height:1.55}
+.rest p:last-child{margin-bottom:0}
+
+.always{margin-top:30px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.always summary{padding:16px 18px;cursor:pointer;font-family:var(--mono);font-size:11px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--signal);list-style:none;
+  display:flex;justify-content:space-between;align-items:center}
+.always summary::-webkit-details-marker{display:none}
+.always summary::after{content:"+";font-size:16px;color:var(--dim)}
+.always[open] summary::after{content:"–"}
+.always summary:focus-visible{outline:2px solid var(--cold);outline-offset:-2px}
+.always .body{padding:0 18px 18px}
+.always .body p{font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.55}
+
+.foot{margin-top:34px;padding-top:18px;border-top:1px solid var(--line);font-family:var(--mono);
+  font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);line-height:1.9}
+.foot b{color:var(--muted);font-weight:600}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="context">
+      <span id="ctx-date"></span><span class="phase" id="ctx-phase"></span>
+    </div>
+    <h1 id="title"></h1>
+    <div class="duration" id="duration"></div>
+  </header>
+  <nav id="nav" aria-label="Rotation day"></nav>
+  <main id="content"></main>
+
+  <details class="always">
+    <summary>Daily mobility · 10 min · separate from training</summary>
+    <div class="body">
+      <p>Not part of a session. Morning or evening, every day including rest days. Gates the handstand, the squat, the overhead press, and snowboard rotation — four goals, ten minutes.</p>
+      <ol class="list" id="mobility"></ol>
+    </div>
+  </details>
+
+  <details class="always" style="margin-top:14px">
+    <summary>Your gym · what you have and what's missing</summary>
+    <div class="body" id="gearlist"></div>
+  </details>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const START = new Date(2026,7,24);
+const ICELAND_OUT = new Date(2026,7,9);
+const ICELAND_BACK = new Date(2026,7,22);
+const ANCHOR_DATE = new Date(2026,6,19);   // Sun 19 Jul 2026
+const ANCHOR_POS  = 5;                     // Deadlift + Posterior
+
+const yt = q => "https://www.youtube.com/results?search_query="+encodeURIComponent(q);
+
+/* ============================================================
+   OPENER
+   ============================================================ */
+const OPENER = { label:"Opener", time:"10 min", items:[
+  {n:"Wrist + shoulder prep", load:"4", unit:"min", new:true, gear:"Bands",
+   sub:"Never skip. Wrist tendonitis is the #1 thing that ends handstand training.",
+   cues:["Wrist circles, prayer and reverse-prayer stretch","Knuckle push-ups, palm rocks front to back","Band pass-throughs for the shoulders","<strong>Every session.</strong> No exceptions"],
+   demo:yt("wrist prep routine handstand training")},
+  {n:"Handstand practice", load:"6", unit:"min", new:true, gear:"Wall",
+   sub:"Fresh, before anything else. Chest-to-wall — the honest version.",
+   cues:["Belly to wall, hands <strong>6 inches</strong> from the base","Arms locked, shoulders shrugged to your ears","<strong>Ribs down, glutes squeezed.</strong> Arching = banana with the wall behind you","Finger-pressure pulses 3×20","Your wall holds have been back-to-wall. Expect 15–30s and expect it to humble you","Target: 3×60s chest-to-wall by October"],
+   demo:yt("chest to wall handstand hold technique")}
+]};
+
+/* ============================================================
+   DAYS
+   gear = equipment needed.  swap = substitution using what you own.
+   ============================================================ */
+const DAYS = {
+1:{name:"Squat + Jump", dur:"~52 min", blocks:[
+  {label:"Jump", time:"18 min", items:[
+    {n:"Rim jumps", load:"8–10", unit:"attempts", gear:"Hoop, ball",
+     sub:"Max effort, fully fresh, long rest. Skill work.",
+     cues:["Full approach every rep — you're training the approach as much as the jump","<strong>Penultimate step long and low</strong> — that's where most people leak power","Arms drive from behind the hips, accelerating up as feet leave the floor","Film one set a week at 240fps, side angle"],
+     demo:yt("basketball dunk approach two foot takeoff technique")},
+    {n:"Drop jumps", load:"4×3", unit:"", new:true, gear:"Box 8–24\"",
+     swap:"No plyo box yet — <strong>use your bench</strong>. A flat bench is ~17–18\", which is dead centre of the drop-jump range. Land on rubber matting, not bare concrete. Half the sets (2×3) until you have proper mats.",
+     sub:"Low box. Minimal ground contact. The floor is lava.",
+     cues:["<strong>Heel-slap test:</strong> hear your heels hit → box is too high","Pick the height where rebound stays within 1–2\" of your standing vertical","Land forefoot-to-midfoot, toes pulled up before contact","Quarter squat at most. Stiff bounce, ankles doing the work","Rebound drops within a set → <strong>stop the set</strong>","Drop jump ≠ depth jump. You're training reactivity first"],
+     demo:"https://www.just-fly-sports.com/depth-jump-guide/"}
+  ]},
+  {label:"Strength", time:"27 min", items:[
+    {n:"Squat", load:"5×3", unit:"82–87%", gear:"SSB + rack",
+     swap:"No safety squat bar yet — <strong>use the Yukon bar</strong>. It's a buffalo-style bar with a 6\" bend; more shoulder comfort than a straight bar, though it won't fix your bracing. Test Yukon vs straight bar one session each, filmed from the side, and use whichever holds depth and torso angle longer.",
+     sub:"The strength driver — and more trunk demand than a back squat, not less.",
+     cues:["Full depth: hip crease below the top of the knee","Controlled down, <strong>explode up</strong>","Target 305 back-squat equivalent. Milestones: 240 → 275 → 305","An SSB constantly tries to fold you forward — that's the point. It trains the thing that fails","Back squat itself: every 4th week, 3×5 at 60–70%, pattern practice only"],
+     demo:yt("safety squat bar technique upright torso")},
+    {n:"Bulgarian split squat", load:"3×8", unit:"per leg", gear:"Bench, DBs",
+     sub:"Quad-dominant, low spinal load, closest to a jump.",
+     cues:["Rear foot on the bench, front shin roughly vertical","Slow eccentric","Note left/right differences — they matter","35 lb DBs will cap this soon. Loadable handles fix it"],
+     demo:yt("bulgarian split squat form technique")},
+    {n:"Belt squat", load:"3×10", unit:"heavy", gear:"Cable + dip belt",
+     swap:"You don't have a leg press. <strong>Better option:</strong> low pulley on your cable machine + a dip belt, standing on two blocks. Zero spinal compression — arguably better than a leg press given T6-8. <em>Until the dip belt arrives:</em> add a 4th set of Bulgarian split squats instead.",
+     sub:"Loads the legs with the trunk removed. The clean read on your leg strength.",
+     cues:["Your trunk has always failed first. This is the lift that tells the truth","Stand on blocks so the plates clear the floor","Full range, no lockout slam"],
+     demo:yt("cable belt squat home gym setup")},
+    {n:"Seated calf raise", load:"3×15", unit:"", new:true, gear:"Bench + plates",
+     sub:"Soleus. Never trained. Primary ankle-stiffness contributor in a jump.",
+     cues:["Sit on the bench, plates or a loaded bar across your knees, balls of feet on a plate","<strong>Seated</strong> hits soleus; standing hits gastroc. You need seated","Full stretch at the bottom, pause at the top","A soft ankle is a hard ceiling on your vertical"],
+     demo:yt("seated calf raise soleus technique home gym")}
+  ]}
+]},
+
+2:{name:"Bench + Pull", dur:"~52 min", blocks:[
+  {label:"Press", time:"20 min", items:[
+    {n:"Bench press", load:"5×3", unit:"175–185", gear:"Barbell, bench",
+     sub:"Current 1RM ~210. Target 275.",
+     cues:["Heavy triples move a max. Your 3×7 work is hypertrophy, not strength","+5 lb/week until it stalls, then +3, then add a rep","Milestones: 235 (mid-2027) → 255 (2028) → 275 (2029)","The Yukon's 6\" bend gives a deeper ROM here — a good use for it"],
+     demo:yt("bench press setup technique arch leg drive")},
+    {n:"Overhead press", load:"3×6", unit:"", gear:"Barbell, rack",
+     sub:"Your free T-spine diagnostic. Check it every session.",
+     cues:["<strong>Watch for rib flare and low-back arch</strong> as the bar goes overhead","If you have to arch to lock out, your thoracic extension isn't there — and neither is your handstand","The fact that it's humbling is the information"],
+     demo:yt("strict overhead press technique ribs down")}
+  ]},
+  {label:"Pull", time:"18 min", items:[
+    {n:"Weighted pull-ups", load:"4×5", unit:"", gear:"Pull-up bar",
+     swap:"No dip belt yet — <strong>hold a dumbbell between your feet</strong>, or wear a backpack loaded with plates. Awkward past ~35 lb, which is another reason the dip belt is worth the $30.",
+     sub:"Pull to sternum, not chin.",
+     cues:["Explosive. Sternum contact is the strength driver for the muscle-up","Full dead hang at the bottom"],
+     demo:yt("weighted pull up technique chest to bar")},
+    {n:"Muscle-up transitions", load:"3–5", unit:"attempts", new:true, gear:"Rings",
+     swap:"No rings yet — <strong>train bar muscle-up transitions on your pull-up bar</strong>: explosive chest-to-bar pulls, then straight-bar dips at the top of the rack. Rings are $40 and hang from the rack you already own, so this is a short-term substitute.",
+     sub:"Rings at chest height, feet assisting on the floor.",
+     cues:["Pull to sternum, then <strong>lean chest forward</strong> as elbows roll over","Rings stay tight to the body — any gap kills it","If chest-to-bar pull-ups are easy, you're ready","Buy 32mm rings, not 28mm — your hands are big"],
+     demo:yt("ring muscle up transition drill progression")},
+    {n:"Scap pull-ups", load:"3×10", unit:"", new:true, gear:"Pull-up bar",
+     sub:"Teaches lats to fire before biceps. The muscle-up unlock.",
+     cues:["Dead hang, pull shoulder blades down without bending the elbows","Small movement. Feels like almost nothing at first"],
+     demo:yt("scapular pull ups technique")}
+  ]},
+  {label:"Trunk", time:"6 min", items:[
+    {n:"Hollow hold", load:"3×40", unit:"sec", gear:"Floor",
+     sub:"Handstand, backflip, muscle-up, snowboard trunk — all at once.",
+     cues:["Low back <strong>pinned</strong> to the floor. If it lifts, tuck the knees until it doesn't","This shape is the handstand shape"],
+     demo:yt("hollow body hold progression technique")},
+    {n:"Ab wheel rollout", load:"3×8", unit:"", gear:"Ab wheel",
+     sub:"Anti-extension.",
+     cues:["Ribs down the whole way out","Slow. Control the return"],
+     demo:yt("ab wheel rollout technique ribs down")}
+  ]}
+]},
+
+3:{name:"Landings + Frontal Plane", dur:"~55 min", note:"Your #1 goal's day.", blocks:[
+  {label:"Landings", time:"15 min", items:[
+    {n:"Altitude landings", load:"4×5", unit:"", new:true, gear:"Box 24–30\"",
+     swap:"No box tall enough — <strong>stack plates on the bench</strong>, or start from bench height (17–18\") and build up. Lower is fine; ramping slowly is the whole point at 36 with untrained tendons.",
+     sub:"Drop, STICK it, absorb hard, hold 3s.",
+     cues:["Trains the <strong>eccentric</strong> half of the elastic system — what a snowboard landing is made of","Absorb, don't rebound. Opposite of a drop jump","Stick and hold. Stumbling means the box is too high"],
+     demo:yt("altitude landing drill stick landing plyometrics")},
+    {n:"Single-leg landings", load:"3×5", unit:"per side", new:true, week:4, gear:"Box 12–18\"",
+     sub:"Drop, land one leg, stick 3s.",
+     cues:["Snowboard landings are rarely symmetrical","Knee tracks over the foot. Caving in → lower the box","Both sides equally, even when one feels much worse"],
+     demo:yt("single leg landing mechanics knee valgus drill")},
+    {n:"Off-axis landings", load:"3×4", unit:"each way", new:true, week:8, gear:"Box 12–18\"",
+     sub:"Drop and land rotated 45–90°.",
+     cues:["<strong>This is the actual failure mode.</strong> Nobody blows a knee landing square","45° both directions before you add 90°","Highest-risk drill in the program and the most specific to what you do"],
+     demo:yt("rotational landing drill knee injury prevention sport")}
+  ]},
+  {label:"Carries", time:"12 min", items:[
+    {n:"Farmer's carry", load:"3×40", unit:"yd", gear:"Heavy DBs",
+     swap:"35 lb dumbbells are too light to be a real carry. <strong>Grip two 45 lb plates by the rim</strong>, one per hand — awkward, which is the point, and it doubles as grip work. Loadable handles are the proper fix.",
+     sub:"Heavy. Also your grip work.",
+     cues:["Walk tall, ribs down, shoulders packed","<strong>Posture breaks → set is over.</strong> That IS the exercise"],
+     demo:yt("farmers carry technique posture")},
+    {n:"Suitcase carry", load:"3×40", unit:"yd/side", gear:"Heavy DB",
+     swap:"Same fix — one 45 lb plate held by the rim, or a loaded barbell held at one end.",
+     sub:"Anti-lateral-flexion. Brutally honest about asymmetry.",
+     cues:["Don't lean away from the weight","Whichever side is worse gets an extra set"],
+     demo:yt("suitcase carry anti lateral flexion technique")}
+  ]},
+  {label:"Frontal plane", time:"18 min", items:[
+    {n:"Tuck flag progression", load:"8", unit:"min", new:true, gear:"Rack upright",
+     sub:"Anti-lateral-flexion isometric. The spine stays rigid.",
+     cues:["<strong>1.</strong> Straight-arm side plank, top hand overhead — 3×30s/side → 60s","<strong>2.</strong> Side plank, top leg lifted","<strong>3.</strong> Rack-upright tuck holds — 3×5–10s/side","<strong>Top hand PULLS, bottom hand PUSHES.</strong> That's the whole flag","Knees tight. Don't chase horizontal — just get airborne","Both sides equally. Asymmetry compounds","Straddle and full flag deferred to 2027"],
+     demo:yt("tuck human flag progression tutorial")},
+    {n:"Pallof press", load:"3×12", unit:"per side", new:true, gear:"Cable or band",
+     sub:"Anti-rotation. Direct freestyle transfer.",
+     cues:["Cable at chest height, press straight out","The job is not letting the cable rotate you","Slow. Resist, don't fight"],
+     demo:yt("pallof press anti rotation technique")},
+    {n:"Side plank", load:"3×45", unit:"sec", gear:"Floor",
+     sub:"Flag base work.",
+     cues:["Stack the hips. Don't let the bottom one sag"],
+     demo:yt("side plank form technique")}
+  ]}
+]},
+
+5:{name:"Deadlift + Posterior", dur:"~52 min", blocks:[
+  {label:"Pull", time:"26 min", items:[
+    {n:"Deadlift", load:"5×3", unit:"240–255", gear:"Barbell + straps",
+     swap:"No straps yet — <strong>use a hook grip or mixed grip</strong>. Your hands will still likely quit before your back does. That's information, not failure. Straps are $15 and are the fix.",
+     sub:"Grip is capping this lift, not your back.",
+     cues:["<strong>235×8 hard (19 Jul) → 1RM ~300.</strong> Grip failed before the posterior chain","Straps on the heavy sets so your legs and back become the limiter","+5 lb/week until it stalls, then +3, then add a rep","Current ~300 → 420. Milestones: 340 → 380 → 420","Squat is 0.67× this lift. Normal is 0.75–0.85 — your legs are fine, the bar-on-back position isn't"],
+     demo:yt("conventional deadlift setup technique bracing")},
+    {n:"Speed deadlift", load:"4×3", unit:"~210", gear:"Trap bar",
+     swap:"No trap bar — <strong>use your straight bar at 60–70%, moved as fast as you can</strong>. The trap bar's job here is explosive triple extension, and a light fast pull does that. Slightly more lumbar demand; keep the reps crisp and stop if speed drops.",
+     sub:"Moved fast. Not a grind. This is the vertical-jump transfer.",
+     cues:["If the bar is slow, it's too heavy for this purpose","Maximal intent every rep","Reset each rep. No touch-and-go"],
+     demo:yt("speed deadlift dynamic effort technique bar speed")},
+    {n:"Romanian deadlift", load:"3×6", unit:"", gear:"Barbell",
+     swap:"Nordic curls need an anchor you don't have. Two options with your gear: <strong>RDLs</strong> (listed here, simplest), or <strong>band-assisted Nordics</strong> — set a loaded barbell in the low J-hooks, hook your ankles under it, kneel on a folded mat, and loop a band from the rack top for assistance.",
+     sub:"Hamstring health.",
+     cues:["Hinge, don't squat. Push the hips back","Soft knees, bar stays close to the legs","Feel the stretch, stop when the low back wants to round"],
+     demo:yt("romanian deadlift technique hinge")}
+  ]},
+  {label:"Posterior + jump", time:"10 min", items:[
+    {n:"Pogo hops", load:"3×15", unit:"", new:true, gear:"Firm ground",
+     sub:"Straight legs, ankles only, minimal ground contact.",
+     cues:["Almost no knee bend. Pure ankle stiffness","Cheapest reactive work there is","Fine on firm grass or matting"],
+     demo:yt("pogo hops plyometric ankle stiffness drill")},
+    {n:"Broad jumps", load:"3×3", unit:"", gear:"Space",
+     sub:"Horizontal power. Free diagnostic.",
+     cues:["Full arm swing, land soft","Measure occasionally — it tracks with your vertical"],
+     demo:yt("standing broad jump technique arm swing")}
+  ]},
+  {label:"Grip", time:"5 min", items:[
+    {n:"Dead hangs", load:"60", unit:"sec total", gear:"Pull-up bar",
+     sub:"Ring muscle-up and palming, same work.",
+     cues:["<strong>Grip is a confirmed bottleneck</strong> — it failed before your back at 235×8","Passive hang first, then active (scaps pulled down)","Plate pinches 3× max hold — highest-yield item for palming","Fixes the deadlift cap AND palming a basketball. One weakness, two goals"],
+     demo:yt("dead hang grip strength progression")},
+    {n:"Band finger extensions", load:"3×20", unit:"", gear:"Bands",
+     sub:"Do not skip.",
+     cues:["Grip work without extensor work causes elbow tendinopathy","That one injury takes out bench, deadlift, pull-ups AND handstands at once"],
+     demo:yt("finger extension band exercise elbow tendinopathy prevention")}
+  ]}
+]},
+
+6:{name:"Skill Day", dur:"~55 min", note:"Where the backflip and handstand get trained.", blocks:[
+  {label:"Handstand", time:"22 min", items:[
+    {n:"Chest-to-wall holds", load:"5×max", unit:"", new:true, gear:"Wall",
+     sub:"Rebuild the shape. Target 3×60s by October.",
+     cues:["Hands 6\" from the wall. Closer is more vertical — that's the point","Shoulders fully elevated, ribs down, glutes on, toes pointed","Straight line: wrists → shoulders → hips → heels","Film from the side weekly"],
+     demo:yt("chest to wall handstand hold technique")},
+    {n:"Shoulder taps", load:"3×10", unit:"per side", new:true, gear:"Wall",
+     sub:"Chest-to-wall. Learning to load one arm inverted.",
+     cues:["Direct one-arm handstand and handwalk prep","Small taps first. Shift weight, don't lunge"],
+     demo:yt("handstand shoulder taps wall drill")},
+    {n:"Finger pressure pulses", load:"3×20", unit:"", new:true, gear:"Wall",
+     sub:"The skill you've been missing. Balance is fingers, not strength.",
+     cues:["Press fingertips into the floor to shift weight <strong>back</strong>","Relax the fingers to fall <strong>forward</strong>","Pulse it: press, relax, press, relax","You have the strength. You don't have the correction mechanism"],
+     demo:yt("handstand balance finger pressure drill")},
+    {n:"Freestanding kick-ups", load:"20", unit:"attempts", gear:"Space",
+     sub:"Aim for the balance point, not the wall.",
+     cues:["<strong>Practice bailing first.</strong> Cartwheel out, 10/day both sides","You won't commit to a real kick-up until bailing is automatic","Expect 80% failure. That is the work"],
+     demo:yt("handstand kick up cartwheel bail practice")}
+  ]},
+  {label:"Rotation — alternate weeks", time:"15 min", items:[
+    {n:"Week A · Backflip progressions", load:"gym", unit:"coached", new:true, gear:"Gym + pit",
+     sub:"Trampoline → tumble track → foam pit → mat with spotter.",
+     cues:["<strong>You have T6-8 history. A botched backflip lands on your neck.</strong>","Coached, into a pit. No self-teaching on grass","A back tuck needs 12–18\" of vertical. You have 21\" — capacity isn't the limiter","What blocks people: not committing (jumping back instead of UP), slow tuck, not spotting the landing","Rotation speed comes from how fast you pull the knees in, not hang time"],
+     demo:yt("standing backflip progression adult beginner coach")},
+    {n:"Week B · Cable rotational chops", load:"4×8", unit:"per side", new:true, gear:"Med ball",
+     swap:"No med ball — <strong>use your cable machine</strong>. High-to-low chops and low-to-high lifts, 4×8 each side, moved fast. Cables actually beat a med ball here: constant tension, no wall needed, and you can load them properly.",
+     sub:"Maximal intent, not slow control.",
+     cues:["<strong>Do not start until thoracic rotation tests above 35°.</strong>","Training rotational power into a stiff T-spine teaches your lumbar to absorb it harder","Mobility → control → power. The order is not optional","Rotate through the mid-back, not the low back. Hips stay relatively quiet"],
+     demo:yt("cable chop lift rotational power technique")}
+  ]},
+  {label:"Grip", time:"5 min", items:[
+    {n:"False grip dead hangs", load:"3×20", unit:"sec", new:true, gear:"Rings",
+     swap:"No rings yet — <strong>false grip on a pull-up bar</strong> works, though it's harder on a fixed bar. Or skip and add plate pinches until the rings arrive.",
+     sub:"Ring muscle-up prep.",
+     cues:["Ring sits diagonally across the palm, pisiform bone on top","Painful at first. Normal, and it passes"],
+     demo:yt("false grip dead hang rings progression")}
+  ]}
+]}
+};
+
+/* ============================================================
+   MOBILITY
+   ============================================================ */
+const MOBILITY = [
+  {n:"Thoracic extensions", load:"10", unit:"reps ×3 levels", gear:"Foam roller",
+   swap:"No foam roller — <strong>lie back over the end of your bench</strong>, or use a rolled towel around a barbell on the floor. The bench edge works well because you control the height.",
+   cues:["Roller across T6-8, hands behind head","Extend back over it. Slow","Three spinal levels: mid, upper-mid, upper"],
+   demo:yt("thoracic extension foam roller mobility drill")},
+  {n:"Open-book rotations", load:"10", unit:"per side", gear:"Floor",
+   cues:["Side-lying, knees at 90°, top arm sweeps open","<strong>Pause 3 seconds</strong> at end range. The pause is the point"],
+   demo:yt("open book thoracic rotation stretch")},
+  {n:"Quadruped rotation", load:"10", unit:"per side", gear:"Floor",
+   cues:["Hand behind head, rotate the elbow to the ceiling"],
+   demo:yt("quadruped thoracic rotation drill")},
+  {n:"Wall slides", load:"10", unit:"slow", gear:"Wall",
+   cues:["Back flat to wall, arms in a goalpost, slide overhead","Wrists and low back stay on the wall. If they can't, that's your restriction"],
+   demo:yt("wall slide shoulder mobility exercise")},
+  {n:"Cat-cow", load:"10", unit:"mid-back focus", gear:"Floor",
+   cues:["Drive the movement through the <strong>mid-back</strong>, not the lumbar"],
+   demo:yt("cat cow thoracic focus mobility")},
+  {n:"Couch stretch", load:"60", unit:"sec/side", gear:"Wall",
+   cues:["Hip flexors — yours are overworking to stabilize a tipping pelvis"],
+   demo:yt("couch stretch hip flexor technique")}
+];
+
+const GEAR = {
+  have:["Barbell","Yukon (buffalo) bar","Plenty of rubber plates","Squat rack","Bench","Pull-up rack","Cable machine (dual pulley)","Adjustable DBs to ~35 lb","Bands","Ab wheel","Ab straps","Thin foam mats"],
+  need:[
+    ["Soft plyo box 20/24/30","Drop jumps + altitude landings","bench works for now","~$130"],
+    ["Lifting straps","Deadlift — grip is your cap","hook or mixed grip","~$15"],
+    ["Loadable DB handles","Carries, split squats, goblet","45 lb plates by the rim","~$60"],
+    ["Gym rings, 32mm","Muscle-up goal","bar transitions","~$40"],
+    ["Dip belt","Belt squats + weighted pull-ups","DB between feet","~$30"],
+    ["Rubber stall mat","Landing surface","thin carpet, half sets","~$50"],
+    ["Safety squat bar","Day 1 primary lift","Yukon bar","~$250"]
+  ],
+  broken:["Knee extension attachment → use a cable ankle strap on the low pulley instead"]
+};
+
+/* ============================================================
+   STATE + RENDER
+   ============================================================ */
+const SHORT = {1:"SQT",2:"BCH",3:"LND",4:"OFF",5:"DL",6:"SKL",7:"OFF"};
+const ORDER = [1,2,3,4,5,6,7];
+const midnight = d => new Date(d.getFullYear(),d.getMonth(),d.getDate());
+const positionFor = date =>
+  ((((Math.round((midnight(date)-midnight(ANCHOR_DATE))/864e5) + ANCHOR_POS - 1) % 7) + 7) % 7) + 1;
+
+const now = new Date();
+let phase, weekNum;
+if(now < ICELAND_OUT){ phase="PHASE 0 · BASELINE"; weekNum=0; }
+else if(now < ICELAND_BACK){ phase="ICELAND · DELOAD"; weekNum=0; }
+else { weekNum = Math.max(1, Math.floor((now-START)/6048e5)+1); phase="BLOCK 1 · WEEK "+weekNum; }
+const today = positionFor(now);
+let selected = today;
+
+const REST = {
+  4:{h:"Rest — or easy aerobic", p:[
+    "Nothing scheduled. Hike, surf, mountaineer, or do nothing.",
+    "Cardio lives outside the training budget, so this is where it goes if you want it. Easy effort only — interval work is the biggest interference with heavy lifting, which is why the sub-12 two-mile is parked.",
+    "Still do the 10-minute mobility block."]},
+  7:{h:"Rest", p:[
+    "Full rest. At 36 the recovery is the training.",
+    "Reactive work and heavy triples are CNS-expensive. Skipping this is how a good six weeks becomes a tendon injury.",
+    "Still do the 10-minute mobility block."]}
+};
+
+const el = id => document.getElementById(id);
+
+function buildNav(){
+  const nav = el("nav"); nav.innerHTML="";
+  ORDER.forEach(d=>{
+    const b=document.createElement("button");
+    b.innerHTML = SHORT[d]+'<span class="dot"></span>';
+    b.setAttribute("aria-current", d===selected?"true":"false");
+    if(!DAYS[d]) b.dataset.rest="1";
+    if(d===today) b.dataset.today="1";
+    b.setAttribute("aria-label",(DAYS[d]?DAYS[d].name:"Rest day")+(d===today?" — today":""));
+    b.onclick=()=>{selected=d;render();};
+    nav.appendChild(b);
+  });
+}
+
+function exerciseNode(item, idx){
+  const locked = item.week && weekNum>0 && weekNum<item.week;
+  const li=document.createElement("li");
+  li.className="ex"+(locked?" locked":"");
+  const btn=document.createElement("button");
+  btn.className="ex-btn"; btn.setAttribute("aria-expanded","false");
+
+  const subline = locked
+    ? "Unlocks week "+item.week+" — tendons adapt slower than muscle"
+    : (item.sub||"");
+
+  let tags="";
+  if(!locked && item.new) tags+='<span class="tag new">NEW</span>';
+  if(!locked && item.swap) tags+='<span class="tag swap">SUB</span>';
+
+  btn.innerHTML =
+    '<span class="idx">'+(idx!=null?String(idx).padStart(2,"0"):"")+'</span>'+
+    '<span class="ex-main">'+
+      '<span class="ex-name">'+item.n+tags+'</span>'+
+      (subline?'<span class="ex-sub">'+subline+'</span>':'')+
+      (item.gear?'<span class="gear'+(item.swap?' swap':'')+'">'+
+        (item.swap?'✕ ':'▸ ')+item.gear+(item.swap?' — using a substitute':'')+'</span>':'')+
+    '</span>'+
+    '<span class="load">'+(locked?"—":item.load)+
+      (item.unit&&!locked?'<span class="unit">'+item.unit+'</span>':'')+'</span>';
+
+  const detail=document.createElement("div");
+  detail.className="detail";
+  if(item.swap){
+    const sb=document.createElement("div");
+    sb.className="swapbox";
+    sb.innerHTML='<b>Do this instead</b><p>'+item.swap+'</p>';
+    detail.appendChild(sb);
+  }
+  if(item.cues){
+    const ul=document.createElement("ul"); ul.className="cues";
+    item.cues.forEach(c=>{const l=document.createElement("li");l.innerHTML=c;ul.appendChild(l);});
+    detail.appendChild(ul);
+  }
+  if(item.demo){
+    const a=document.createElement("a");
+    a.className="demo"; a.href=item.demo; a.target="_blank"; a.rel="noopener";
+    a.textContent="Watch demo"; detail.appendChild(a);
+  }
+
+  btn.onclick=()=>{
+    const open=li.classList.toggle("open");
+    btn.setAttribute("aria-expanded",open?"true":"false");
+  };
+  li.appendChild(btn); li.appendChild(detail);
+  return li;
+}
+
+function blockNode(block, counter){
+  const wrap=document.createElement("section");
+  wrap.className="block";
+  wrap.innerHTML='<div class="block-head"><span>'+block.label+'</span><span class="t">'+(block.time||"")+'</span></div>';
+  const ol=document.createElement("ol"); ol.className="list";
+  block.items.forEach(it=>ol.appendChild(exerciseNode(it,++counter.v)));
+  wrap.appendChild(ol);
+  return wrap;
+}
+
+function render(){
+  buildNav();
+  const day=DAYS[selected], content=el("content");
+  content.innerHTML="";
+
+  const d=new Date();
+  el("ctx-date").innerHTML = selected===today
+    ? d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})+' &middot; DAY '+selected+'/7'
+    : '<button id="back" style="background:none;border:0;color:var(--cold);font:inherit;letter-spacing:.16em;cursor:pointer;padding:0;text-transform:uppercase;">&larr; Back to today</button>';
+  el("ctx-phase").textContent=phase;
+  const back=el("back"); if(back) back.onclick=()=>{selected=today;render();};
+
+  if(!day){
+    const r=REST[selected]||REST[7];
+    el("title").textContent=r.h; el("duration").textContent="";
+    const box=document.createElement("div"); box.className="rest";
+    box.innerHTML="<h2>Take it</h2>"+r.p.map(x=>"<p>"+x+"</p>").join("");
+    content.appendChild(box);
+  } else {
+    el("title").textContent=day.name;
+    el("duration").textContent=day.dur+(day.note?" · "+day.note:"");
+    const c={v:0};
+    content.appendChild(blockNode(OPENER,c));
+    day.blocks.forEach(b=>content.appendChild(blockNode(b,c)));
+  }
+
+  const mob=el("mobility");
+  if(!mob.hasChildNodes()) MOBILITY.forEach(m=>mob.appendChild(exerciseNode(m,null)));
+
+  const gl=el("gearlist");
+  if(!gl.hasChildNodes()){
+    gl.innerHTML =
+      '<p style="color:var(--muted)"><b style="color:var(--text)">Have:</b> '+GEAR.have.join(" · ")+'</p>'+
+      '<p style="color:var(--sub);margin-top:14px"><b>Missing — with the workaround you\'re using now:</b></p>'+
+      '<ul style="list-style:none;padding:0;margin:0">'+
+      GEAR.need.map(g=>'<li style="padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:1.5">'+
+        '<b style="color:var(--text)">'+g[0]+'</b> <span style="font-family:var(--mono);font-size:11px;color:var(--dim)">'+g[3]+'</span><br>'+
+        '<span style="color:var(--muted)">'+g[1]+'</span><br>'+
+        '<span style="color:var(--sub);font-size:12px">now: '+g[2]+'</span></li>').join("")+
+      '</ul>'+
+      '<p style="margin-top:14px;color:var(--muted);font-size:12.5px">'+GEAR.broken.join("<br>")+'</p>';
+  }
+
+  el("foot").innerHTML =
+    "<b>Track sets in Progression.</b> Milestones in Asana.<br>"+
+    "Never jump tired · Ribs down · Sleep 7.5+<br>"+
+    "Hold 170 lb · Protein 170–190 g · Creatine 5 g";
+}
+render();
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>
