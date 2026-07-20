@@ -825,7 +825,8 @@ function authRow(){
       '<button id="send">Send code</button>';
     el.querySelector("#send").onclick=async()=>{
       const email=el.querySelector("#em").value.trim();
-      const {error}=await sb.auth.signInWithOtp({email, options:{shouldCreateUser:false}});
+      const {error}=await sb.auth.signInWithOtp({email,
+        options:{shouldCreateUser:false, emailRedirectTo:"https://whosfromthegreatstate.github.io/training/"}});
       el.innerHTML = error ? "error — "+error.message
         : "link sent · open the email on this device and tap the sign-in link";
     };
