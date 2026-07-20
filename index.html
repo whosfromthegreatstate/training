@@ -111,18 +111,41 @@ ol.list{list-style:none;margin:0;padding:0}
 .foot b{color:var(--muted);font-weight:600}
 
 /* ---- logging ---- */
-.logger{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;margin:2px 0 14px}
-.log-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.step{display:flex;align-items:center;gap:4px}
-.step button{min-width:44px;min-height:44px;background:var(--surface-2);border:1px solid var(--line);
-  border-radius:10px;color:var(--text);font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer}
-.step button:active{background:var(--signal);color:#0F1319}
-.step .val{min-width:64px;text-align:center;font-family:var(--mono);font-size:19px;font-weight:700;
-  font-variant-numeric:tabular-nums}
-.step .val small{display:block;font-size:9px;color:var(--dim);letter-spacing:.12em;font-weight:500}
-.logbtn{width:100%;margin-top:10px;min-height:48px;background:var(--signal);color:#0F1319;border:0;
+.logger{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;
+  margin:2px 0 14px -28px}
+.wrow{display:flex;align-items:stretch;gap:8px;margin-bottom:8px}
+.hbtn{flex:0 0 56px;min-height:56px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:12px;color:var(--text);font-size:22px;font-weight:600;cursor:pointer;
+  touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.hbtn:active{background:var(--signal);color:#0F1319}
+.scrubval{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:4px 0;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;touch-action:none;
+  user-select:none;-webkit-user-select:none;cursor:ns-resize}
+.scrubval .num{font-size:26px;font-weight:800;line-height:1.1}
+.scrubval small{font-size:9px;color:var(--dim);letter-spacing:.14em;font-weight:500}
+.scrubval.scrubbing{border-color:var(--signal)}
+.actrow{display:flex;gap:8px;margin-top:10px}
+.logbtn{flex:1;min-height:52px;background:var(--signal);color:#0F1319;border:0;
   border-radius:10px;font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.12em;cursor:pointer}
-.logbtn:disabled{background:var(--surface-2);color:var(--dim)}
+.tbtn{flex:0 0 52px;min-height:52px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:10px;color:var(--cold);font-size:19px;cursor:pointer}
+.statslink{display:block;margin-top:12px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--cold);cursor:pointer;text-decoration:none}
+.sheetwrap{position:fixed;inset:0;z-index:90;background:rgba(6,9,13,.72);display:none}
+.sheetwrap.on{display:block}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:82vh;overflow-y:auto;background:var(--surface);
+  border-top:1px solid var(--line);border-radius:18px 18px 0 0;
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom))}
+.sheet h3{margin:0 0 2px;font-size:19px;letter-spacing:-.02em}
+.sheet .sub{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.12em;text-transform:uppercase}
+.statrow{display:flex;gap:8px;margin:14px 0}
+.stat{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.stat .n{font-family:var(--mono);font-size:20px;font-weight:800;color:var(--signal)}
+.stat .l{font-family:var(--mono);font-size:8.5px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
+.sheet .spark2 svg{width:100%;height:56px;display:block;margin:6px 0 14px}
+.sesstable{width:100%;font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--muted)}
+.sesstable td:first-child{color:var(--text);white-space:nowrap;padding-right:12px;vertical-align:top}
 .plates{font-family:var(--mono);font-size:11px;color:var(--cold);margin-top:8px;letter-spacing:.04em}
 .plates b{color:var(--muted);cursor:pointer;text-decoration:underline dotted}
 .ghost{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:6px}
@@ -739,17 +762,16 @@ function decorate(detail, item){
   let w = last?.weight_lb ?? 0, r = last?.reps ?? 5, touched = false;
 
   box.innerHTML =
-    '<div class="log-row">'+
-      '<div class="step"><button data-a="-5">−5</button><button data-a="-2.5">−2½</button>'+
-      '<span class="val"><span class="wv"></span><small>LB</small></span>'+
-      '<button data-a="2.5">+2½</button><button data-a="5">+5</button></div>'+
-      '<div class="step"><button data-a="r-1">−</button>'+
-      '<span class="val"><span class="rv"></span><small>REPS</small></span>'+
-      '<button data-a="r1">+</button></div>'+
-    '</div>'+
+    '<div class="wrow"><button class="hbtn" data-k="w" data-d="-1">−</button>'+
+      '<div class="scrubval" data-k="w"><span class="num wv"></span><small>LB · TAP ±5 · HOLD ±2½ · DRAG</small></div>'+
+      '<button class="hbtn" data-k="w" data-d="1">+</button></div>'+
+    '<div class="wrow"><button class="hbtn" data-k="r" data-d="-1">−</button>'+
+      '<div class="scrubval" data-k="r"><span class="num rv"></span><small>REPS</small></div>'+
+      '<button class="hbtn" data-k="r" data-d="1">+</button></div>'+
     '<div class="plates"></div><div class="e1rm"></div><div class="ghost"></div>'+
-    '<button class="logbtn">LOG SET</button><div class="chips"></div>'+
-    '<div class="spark"></div><div class="histlist"></div>';
+    '<div class="actrow"><button class="logbtn">LOG SET</button><button class="tbtn" title="rest timer">⏱</button></div>'+
+    '<div class="chips"></div>'+
+    '<a class="statslink">Stats + history ›</a>';
 
   const q=s=>box.querySelector(s);
   const refresh=()=>{
@@ -775,29 +797,37 @@ function decorate(detail, item){
           setTimeout(()=>{delete c.dataset.arm; refresh();},2500); } };
       chips.appendChild(c);
     });
-    drawSpark();
-  };
-  const drawSpark=()=>{
-    const sp=hist[name]?.spark;
-    if(!sp || sp.length<3){ q(".spark").innerHTML=""; return; }
-    const vals=sp.map(p=>p.e1), mn=Math.min(...vals), mx=Math.max(...vals), rng=(mx-mn)||1;
-    const W=300,H=36;
-    const pts=sp.map((p,i)=>(i/(sp.length-1)*W).toFixed(1)+","+(H-4-((p.e1-mn)/rng*(H-8))).toFixed(1)).join(" ");
-    q(".spark").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
-      '<polyline points="'+pts+'" fill="none" stroke="#6FD3E8" stroke-width="1.5"/></svg>';
-    const hlst=q(".histlist");
-    hlst.innerHTML = (hist[name]?.recent||[]).map(s=>
-      "<b>"+s.d+"</b> "+s.sets.map(x=>(x[0]??"bw")+"×"+x[1]).join("  ")).join("<br>");
   };
 
-  box.querySelectorAll(".step button").forEach(b=>{
-    b.onclick=()=>{ const a=b.dataset.a; touched=true;
-      if(a==="r1") r=Math.min(r+1,100); else if(a==="r-1") r=Math.max(r-1,1);
-      else w=Math.max(0, Math.round((w+parseFloat(a))*2)/2);
-      refresh(); };
+  const adjust=(k,steps,fine)=>{ touched=true;
+    if(k==="r") r=Math.min(100,Math.max(1, r+steps));
+    else { const inc=fine?2.5:5; w=Math.max(0, Math.round((w+steps*inc)*2)/2); }
+    refresh();
+  };
+  /* tap = one coarse step; hold = accelerating fine steps */
+  box.querySelectorAll(".hbtn").forEach(b=>{
+    const k=b.dataset.k, d=+b.dataset.d;
+    let t=null, held=false;
+    const loop=(delay)=>{ t=setTimeout(()=>{ held=true; adjust(k,d,true);
+      loop(Math.max(70, delay*0.82)); }, delay); };
+    b.onpointerdown=e=>{ e.preventDefault(); held=false; loop(420); b.setPointerCapture(e.pointerId); };
+    const end=()=>{ clearTimeout(t); t=null; };
+    b.onpointerup=e=>{ end(); if(!held) adjust(k,d,false); };
+    b.onpointercancel=end; b.oncontextmenu=e=>e.preventDefault();
+  });
+  /* drag the value up/down to scrub in fine steps */
+  box.querySelectorAll(".scrubval").forEach(v=>{
+    const k=v.dataset.k; let sy=null;
+    v.onpointerdown=e=>{ sy=e.clientY; v.classList.add("scrubbing"); v.setPointerCapture(e.pointerId); };
+    v.onpointermove=e=>{ if(sy==null) return;
+      const steps=Math.trunc((sy-e.clientY)/14);
+      if(steps){ adjust(k,steps,true); sy=e.clientY; if(navigator.vibrate) navigator.vibrate(3); } };
+    v.onpointerup=v.onpointercancel=()=>{ sy=null; v.classList.remove("scrubbing"); };
   });
   box.querySelector(".plates").onclick=e=>{
     if(e.target.tagName==="B"){ barW = barW===45?55:45; LS.set("wt_bar",barW); refresh(); } };
+  box.querySelector(".tbtn").onclick=()=>startTimer(/5×3|4×5/.test(item.load||"")?180:90, name);
+  box.querySelector(".statslink").onclick=()=>openSheet(name);
   box.querySelector(".logbtn").onclick=()=>{
     local.push({ id:crypto.randomUUID(), logged_at:new Date().toISOString(),
       session_date:todayISO(), exercise:name, weight_lb:w||null, reps:r,
@@ -813,6 +843,42 @@ function decorate(detail, item){
 function opened(item){
   const h=hist[item.n];
   if(!h || Date.now()-h.at > 6*3600e3) fetchHist(item.n).then(()=>refreshers[item.n]?.());
+}
+
+/* ---------- stats sheet ---------- */
+const sw2=document.createElement("div");
+sw2.className="sheetwrap"; sw2.innerHTML='<div class="sheet" id="sheet"></div>';
+document.body.appendChild(sw2);
+sw2.onclick=e=>{ if(e.target===sw2) sw2.classList.remove("on"); };
+
+function openSheet(name, isRetry){
+  const h=hist[name], sh=document.getElementById("sheet");
+  const tSets=todaySets(name);
+  const todayBest=Math.max(0,...tSets.map(s=>e1rm(s.weight_lb,s.reps)||0));
+  const totalSets=(h?.recent||[]).reduce((a,s)=>a+s.sets.length,0);
+  let sparkSvg="";
+  const sp=h?.spark;
+  if(sp && sp.length>=3){
+    const vals=sp.map(p=>p.e1), mn=Math.min(...vals), mx=Math.max(...vals), rng=(mx-mn)||1;
+    const W=320,H=56;
+    const pts=sp.map((p,i)=>(i/(sp.length-1)*W).toFixed(1)+","+(H-6-((p.e1-mn)/rng*(H-12))).toFixed(1)).join(" ");
+    sparkSvg='<div class="spark2"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
+      '<polyline points="'+pts+'" fill="none" stroke="#6FD3E8" stroke-width="1.5"/></svg></div>'+
+      '<div class="sub">e1RM · last '+sp.length+' sessions · '+sp[0].d+' → '+sp[sp.length-1].d+'</div>';
+  }
+  const rows=(h?.recent||[]).map(s=>"<tr><td>"+s.d+"</td><td>"+
+    s.sets.map(x=>(x[0]??"bw")+"×"+x[1]).join("  ")+"</td></tr>").join("");
+  sh.innerHTML =
+    '<h3>'+name+'</h3><div class="sub">'+new Date().toDateString()+'</div>'+
+    '<div class="statrow">'+
+      '<div class="stat"><div class="n">'+(h?.best?.e1||"—")+'</div><div class="l">best e1RM'+(h?.best?.d?' · '+h.best.d:'')+'</div></div>'+
+      '<div class="stat"><div class="n">'+(todayBest||"—")+'</div><div class="l">today e1RM</div></div>'+
+      '<div class="stat"><div class="n">'+(tSets.length||"—")+'</div><div class="l">sets today</div></div>'+
+    '</div>'+ sparkSvg +
+    (rows?'<table class="sesstable">'+rows+'</table>':'<div class="sub">no history yet</div>');
+  sw2.classList.add("on");
+  if(!isRetry && session && navigator.onLine && (!h || Date.now()-h.at > 6*3600e3))
+    fetchHist(name).then(()=>{ if(sw2.classList.contains("on")) openSheet(name, true); });
 }
 
 /* ---------- auth ---------- */
