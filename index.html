@@ -722,7 +722,7 @@ async function sync(){
     if(!error) dels = dels.filter(x=>x!==id);
   }
   for(const row of [...sessq]){
-    const { error } = await sb.from("workout_sessions").upsert(row, { onConflict:"session_date" });
+    const { error } = await sb.from("workout_sessions").upsert(row, { onConflict:"id" });
     if(!error) sessq = sessq.filter(x=>x!==row);
   }
   // trim local to last 90 days
@@ -880,9 +880,8 @@ function decorate(detail, item){
       if(s){ s.weight_lb=w||null; s.reps=r; s.synced=false; }
       editing=null; saveLocal(); sync(); refresh(); return;
     }
-    if(LS.get("wt_start_d")!==todayISO()){
-      LS.set("wt_start", new Date().toISOString()); LS.set("wt_start_d", todayISO());
-    }
+    if(!LS.get("wt_sess"))
+      LS.set("wt_sess", { id:crypto.randomUUID(), start:new Date().toISOString(), d:todayISO() });
     local.push({ id:crypto.randomUUID(), logged_at:new Date().toISOString(),
       session_date:todayISO(), exercise:name, weight_lb:w||null, reps:r,
       source:"app", synced:false });
@@ -900,50 +899,56 @@ function opened(item){
 }
 
 /* ---------- workout clock + complete ---------- */
-const todayAll = () => local.filter(s=>s.session_date===todayISO());
 const fmtDur = s => s>=3600 ? Math.floor(s/3600)+"h "+Math.floor(s%3600/60)+"m" : Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
-const workoutActive = () => LS.get("wt_start_d")===todayISO() && LS.get("wt_done")!==todayISO();
+/* A workout runs from its first logged set until COMPLETE; the next set after
+   completing starts a new workout — two-a-days are two records. */
+const curSess = () => {
+  const s=LS.get("wt_sess", null);
+  if(s && s.d!==todayISO()){   // stale from a past day: age it out
+    localStorage.removeItem("wt_sess"); return null; }
+  return s;
+};
 
 setInterval(()=>{
   let c=document.getElementById("wclock");
-  if(!workoutActive()){ c&&c.remove(); return; }
+  const s=curSess();
+  if(!s){ c&&c.remove(); return; }
   if(!c){ const cd=document.getElementById("ctx-date");
     if(!cd || !/DAY/.test(cd.textContent)) return;
     c=document.createElement("span"); c.id="wclock"; c.className="wclock";
     cd.appendChild(c); }
-  c.textContent=" · "+fmtDur((Date.now()-new Date(LS.get("wt_start")))/1000);
+  c.textContent=" · "+fmtDur((Date.now()-new Date(s.start))/1000);
 },1000);
 
 function completeBar(){
   let b=document.getElementById("completebtn");
-  const want = todayAll().length>0;
-  if(!want){ b&&b.remove(); return; }
+  if(!curSess()){ b&&b.remove(); return; }
   if(!b){
     b=document.createElement("button"); b.id="completebtn"; b.className="completebtn";
+    b.textContent="COMPLETE WORKOUT";
     const foot=document.querySelector(".foot");
     foot.parentNode.insertBefore(b, foot);
     b.onclick=completeWorkout;
   }
-  b.textContent = LS.get("wt_done")===todayISO() ? "UPDATE COMPLETED WORKOUT" : "COMPLETE WORKOUT";
 }
 
 async function completeWorkout(){
-  const sets=todayAll();
-  const started=LS.get("wt_start") || sets[0]?.logged_at || new Date().toISOString();
-  const dur=Math.max(60, Math.round((Date.now()-new Date(started))/1000));
-  const vol=Math.round(sets.reduce((a,s)=>a+(s.weight_lb||0)*s.reps,0));
-  const row={ session_date:todayISO(), started_at:started, completed_at:new Date().toISOString(),
-    duration_sec:dur, sets_count:sets.length, volume_lb:vol, source:"app" };
-  const first = LS.get("wt_done")!==todayISO();
-  LS.set("wt_done", todayISO());
+  const s=curSess(); if(!s) return;
+  const sets=local.filter(x=>x.session_date===todayISO() && x.logged_at>=s.start);
+  const dur=Math.max(60, Math.round((Date.now()-new Date(s.start))/1000));
+  const vol=Math.round(sets.reduce((a,x)=>a+(x.weight_lb||0)*x.reps,0));
+  const row={ id:s.id, session_date:todayISO(), started_at:s.start,
+    completed_at:new Date().toISOString(), duration_sec:dur,
+    sets_count:sets.length, volume_lb:vol, source:"app" };
+  localStorage.removeItem("wt_sess");
   let num=null;
   if(session && navigator.onLine){
-    const { error } = await sb.from("workout_sessions").upsert(row, { onConflict:"session_date" });
+    const { error } = await sb.from("workout_sessions").upsert(row, { onConflict:"id" });
     if(!error){ const { count } = await sb.from("workout_sessions").select("*",{count:"exact",head:true}); num=count; }
     else { sessq.push(row); saveLocal(); }
   } else { sessq.push(row); saveLocal(); }
   completeBar();
-  if(first) celebrate(num, dur, vol, sets.length);
+  celebrate(num, dur, vol, sets.length);
 }
 
 function celebrate(num, dur, vol, n){

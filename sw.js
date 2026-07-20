@@ -1,5 +1,5 @@
 /* Bump CACHE whenever index.html changes, or the old version sticks. */
-const CACHE = "training-v10";
+const CACHE = "training-v11";
 const ASSETS = [
   "./",
   "./index.html",
