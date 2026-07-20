@@ -110,6 +110,50 @@ ol.list{list-style:none;margin:0;padding:0}
   font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);line-height:1.9}
 .foot b{color:var(--muted);font-weight:600}
 
+/* ---- logging ---- */
+.logger{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;margin:2px 0 14px}
+.log-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.step{display:flex;align-items:center;gap:4px}
+.step button{min-width:44px;min-height:44px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:10px;color:var(--text);font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer}
+.step button:active{background:var(--signal);color:#0F1319}
+.step .val{min-width:64px;text-align:center;font-family:var(--mono);font-size:19px;font-weight:700;
+  font-variant-numeric:tabular-nums}
+.step .val small{display:block;font-size:9px;color:var(--dim);letter-spacing:.12em;font-weight:500}
+.logbtn{width:100%;margin-top:10px;min-height:48px;background:var(--signal);color:#0F1319;border:0;
+  border-radius:10px;font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.12em;cursor:pointer}
+.logbtn:disabled{background:var(--surface-2);color:var(--dim)}
+.plates{font-family:var(--mono);font-size:11px;color:var(--cold);margin-top:8px;letter-spacing:.04em}
+.plates b{color:var(--muted);cursor:pointer;text-decoration:underline dotted}
+.ghost{font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:6px}
+.e1rm{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px}
+.e1rm b{color:var(--signal)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{font-family:var(--mono);font-size:12px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:8px;padding:7px 10px;color:var(--text);cursor:pointer}
+.chip.pend{border-style:dashed;color:var(--muted)}
+.chip .x{color:var(--sub);margin-left:7px;font-weight:700}
+.spark{margin-top:10px}
+.spark svg{width:100%;height:36px;display:block}
+.histlist{margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.8}
+.histlist b{color:var(--text)}
+.timerbar{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--surface-2);
+  border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+  display:none;align-items:center;justify-content:space-between;gap:10px}
+.timerbar.on{display:flex}
+.timerbar.done{background:var(--signal);color:#0F1319}
+.timerbar .t{font-family:var(--mono);font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.timerbar .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.timerbar.done .lbl{color:#0F1319}
+.timerbar button{min-height:40px;background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  color:var(--text);font-family:var(--mono);font-size:12px;font-weight:700;padding:0 12px;cursor:pointer}
+.timerbar.done button{background:#0F1319;color:var(--signal);border-color:#0F1319}
+.authrow{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em}
+.authrow a{color:var(--cold);cursor:pointer;text-decoration:underline}
+.authrow input{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;color:var(--text);
+  font:inherit;padding:8px 10px;margin:6px 6px 0 0;width:190px}
+.authrow button{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;color:var(--text);
+  font:inherit;padding:8px 12px;cursor:pointer}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -497,8 +541,10 @@ function exerciseNode(item, idx){
   btn.onclick=()=>{
     const open=li.classList.toggle("open");
     btn.setAttribute("aria-expanded",open?"true":"false");
+    if(open && window.WT) WT.opened(item);
   };
   li.appendChild(btn); li.appendChild(detail);
+  if(idx!=null && !locked && window.WT) WT.decorate(detail,item);
   return li;
 }
 
@@ -556,14 +602,248 @@ function render(){
   }
 
   el("foot").innerHTML =
-    "<b>Track sets in Progression.</b> Milestones in Asana.<br>"+
+    "<b>Log sets by tapping an exercise.</b> Milestones in Asana.<br>"+
     "Never jump tired · Ribs down · Sleep 7.5+<br>"+
-    "Hold 170 lb · Protein 170–190 g · Creatine 5 g";
+    "Hold 170 lb · Protein 170–190 g · Creatine 5 g"+
+    '<div class="authrow" id="authrow"></div>';
+  if(window.WT) WT.authRow();
 }
 render();
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 }
+</script>
+
+<div class="timerbar" id="timerbar">
+  <div><div class="lbl" id="timer-lbl">Rest</div><div class="t" id="timer-t">0:00</div></div>
+  <div><button id="timer-add">+30s</button> <button id="timer-x">Done</button></div>
+</div>
+
+<script type="module">
+/* ============================================================
+   LOGGING — Supabase sync, offline queue, timer, e1RM, plates
+   ============================================================ */
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+const SB_URL = "https://chscnbrkuwvkdskoyspl.supabase.co";
+const SB_KEY = "sb_publishable_vaBe-idg4DFwsjrcdZxfcw_cYTUjGzC";
+const TABLE = "workout_sets";
+const sb = createClient(SB_URL, SB_KEY);
+
+/* History-name aliases: program name -> names used in imported Progression data */
+const ALIAS = {
+  "Weighted pull-ups": ["Pull-ups"],
+  "Rim jumps": ["Rim Jump"],
+  "Drop jumps": ["Depth jump"],
+  "Chest-to-wall holds": ["Hand stands"],
+  "Handstand practice": ["Hand stands"],
+  "Seated calf raise": ["Calf raise (BW)"]
+};
+const BARBELL = new Set(["Squat","Bench press","Deadlift","Overhead press",
+  "Romanian deadlift","Speed deadlift"]);
+const todayISO = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+
+/* ---------- local store ---------- */
+const LS = {
+  get(k,f){ try{ return JSON.parse(localStorage.getItem(k)) ?? f; }catch{ return f; } },
+  set(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+};
+let local = LS.get("wt_local", []);      // sets logged on this device
+let dels  = LS.get("wt_dels", []);       // ids deleted locally, pending remote delete
+let hist  = LS.get("wt_hist", {});       // per-exercise cache from server
+let barW  = LS.get("wt_bar", 45);
+const saveLocal = () => { LS.set("wt_local", local); LS.set("wt_dels", dels); };
+
+/* ---------- sync ---------- */
+let session = null;
+async function sync(){
+  if(!session || !navigator.onLine) { authRow(); return; }
+  const pending = local.filter(s=>!s.synced);
+  if(pending.length){
+    const rows = pending.map(({synced,...r})=>r);
+    const { error } = await sb.from(TABLE).upsert(rows, { onConflict:"id", ignoreDuplicates:true });
+    if(!error) pending.forEach(s=>s.synced=true);
+  }
+  for(const id of [...dels]){
+    const { error } = await sb.from(TABLE).delete().eq("id", id);
+    if(!error) dels = dels.filter(x=>x!==id);
+  }
+  // trim local to last 90 days
+  const cutoff = new Date(Date.now()-90*864e5).toISOString().slice(0,10);
+  local = local.filter(s=>s.session_date>=cutoff);
+  saveLocal(); authRow();
+  Object.values(refreshers).forEach(f=>{ try{f();}catch{} });
+}
+
+async function fetchHist(name){
+  if(!session || !navigator.onLine) return;
+  const names = [name, ...(ALIAS[name]||[])];
+  const { data, error } = await sb.from(TABLE)
+    .select("id,logged_at,session_date,exercise,weight_lb,reps")
+    .in("exercise", names).order("logged_at",{ascending:false}).limit(400);
+  if(error || !data) return;
+  const sessions = {};
+  data.forEach(r=>{ (sessions[r.session_date] ??= []).push(r); });
+  const days = Object.keys(sessions).sort().reverse();
+  const spark = days.slice(0,30).map(d=>{
+    const best = Math.max(...sessions[d].map(r=>e1rm(r.weight_lb,r.reps)||0));
+    return { d, e1: best };
+  }).reverse();
+  let best = {e1:0,d:null,w:null,r:null};
+  data.forEach(r=>{ const e=e1rm(r.weight_lb,r.reps); if(e && e>best.e1) best={e1:e,d:r.session_date,w:r.weight_lb,r:r.reps}; });
+  const t = todayISO();
+  const lastDay = days.find(d=>d<t);
+  hist[name] = { at: Date.now(), spark, best,
+    last: lastDay ? { d:lastDay, sets: sessions[lastDay].slice().reverse().map(r=>[r.weight_lb,r.reps]) } : null,
+    recent: days.slice(0,8).map(d=>({ d, sets: sessions[d].slice().reverse().map(r=>[r.weight_lb,r.reps]) })) };
+  LS.set("wt_hist", hist);
+}
+
+/* ---------- math + plates ---------- */
+const e1rm = (w,r) => (w==null||!r) ? null : Math.round(w*(1+r/30));
+function plates(total){
+  let side = (total - barW)/2;
+  if(side < 0) return "below bar weight";
+  const out=[]; for(const p of [45,35,25,10,5,2.5]){ while(side>=p-0.01){ out.push(p); side-=p; } }
+  return out.length ? out.join(" + ") : "empty bar";
+}
+
+/* ---------- timer ---------- */
+const tb = document.getElementById("timerbar");
+let tLeft=0, tInt=null;
+function startTimer(sec,label){
+  clearInterval(tInt); tLeft=sec; tb.classList.add("on"); tb.classList.remove("done");
+  document.getElementById("timer-lbl").textContent = "Rest · "+label;
+  const draw=()=>{ document.getElementById("timer-t").textContent =
+    Math.floor(Math.max(tLeft,0)/60)+":"+String(Math.max(tLeft,0)%60).padStart(2,"0"); };
+  draw();
+  tInt=setInterval(()=>{ tLeft--; draw();
+    if(tLeft<=0){ clearInterval(tInt); tb.classList.add("done");
+      document.getElementById("timer-lbl").textContent="GO";
+      if(navigator.vibrate) navigator.vibrate([200,100,200]); }
+  },1000);
+}
+document.getElementById("timer-add").onclick=()=>{ tLeft+=30; tb.classList.remove("done"); };
+document.getElementById("timer-x").onclick=()=>{ clearInterval(tInt); tb.classList.remove("on"); };
+
+/* ---------- logger UI ---------- */
+const todaySets = name => local.filter(s=>s.exercise===name && s.session_date===todayISO());
+const refreshers = {};   // exercise name -> refresh fn of the currently rendered logger
+
+function decorate(detail, item){
+  const name=item.n, box=document.createElement("div");
+  box.className="logger";
+  const h=hist[name];
+  const last = todaySets(name).at(-1) || (h?.last ? {weight_lb:h.last.sets.at(-1)[0], reps:h.last.sets.at(-1)[1]} : null);
+  let w = last?.weight_lb ?? 0, r = last?.reps ?? 5;
+
+  box.innerHTML =
+    '<div class="log-row">'+
+      '<div class="step"><button data-a="-5">−5</button><button data-a="-2.5">−2½</button>'+
+      '<span class="val"><span class="wv"></span><small>LB</small></span>'+
+      '<button data-a="2.5">+2½</button><button data-a="5">+5</button></div>'+
+      '<div class="step"><button data-a="r-1">−</button>'+
+      '<span class="val"><span class="rv"></span><small>REPS</small></span>'+
+      '<button data-a="r1">+</button></div>'+
+    '</div>'+
+    '<div class="plates"></div><div class="e1rm"></div><div class="ghost"></div>'+
+    '<button class="logbtn">LOG SET</button><div class="chips"></div>'+
+    '<div class="spark"></div><div class="histlist"></div>';
+
+  const q=s=>box.querySelector(s);
+  const refresh=()=>{
+    q(".wv").textContent = w%1 ? w.toFixed(1) : w;
+    q(".rv").textContent = r;
+    q(".plates").innerHTML = BARBELL.has(name)&&w>0 ?
+      'per side: '+plates(w)+' · <b>bar '+barW+'</b>' : "";
+    const e=e1rm(w||null,r), hb=hist[name]?.best;
+    q(".e1rm").innerHTML = (e?('this set e1RM <b>'+e+'</b>'):'') +
+      (hb?.e1 ? (e?' · ':'')+'best '+hb.e1+' ('+hb.d+')' : '');
+    const hl=hist[name]?.last;
+    q(".ghost").textContent = hl ? "last · "+hl.d+" · "+hl.sets.map(s=>(s[0]??"bw")+"×"+s[1]).join("  ") : "";
+    const chips=q(".chips"); chips.innerHTML="";
+    todaySets(name).forEach(s=>{
+      const c=document.createElement("span"); c.className="chip"+(s.synced?"":" pend");
+      c.textContent=(s.weight_lb??"bw")+"×"+s.reps;
+      c.onclick=()=>{ if(c.dataset.arm){ local=local.filter(x=>x.id!==s.id);
+          if(s.synced) dels.push(s.id); saveLocal(); sync(); refresh(); }
+        else { c.dataset.arm=1; c.innerHTML=c.textContent+'<span class="x">✕</span>';
+          setTimeout(()=>{delete c.dataset.arm; refresh();},2500); } };
+      chips.appendChild(c);
+    });
+    drawSpark();
+  };
+  const drawSpark=()=>{
+    const sp=hist[name]?.spark;
+    if(!sp || sp.length<3){ q(".spark").innerHTML=""; return; }
+    const vals=sp.map(p=>p.e1), mn=Math.min(...vals), mx=Math.max(...vals), rng=(mx-mn)||1;
+    const W=300,H=36;
+    const pts=sp.map((p,i)=>(i/(sp.length-1)*W).toFixed(1)+","+(H-4-((p.e1-mn)/rng*(H-8))).toFixed(1)).join(" ");
+    q(".spark").innerHTML='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
+      '<polyline points="'+pts+'" fill="none" stroke="#6FD3E8" stroke-width="1.5"/></svg>';
+    const hlst=q(".histlist");
+    hlst.innerHTML = (hist[name]?.recent||[]).map(s=>
+      "<b>"+s.d+"</b> "+s.sets.map(x=>(x[0]??"bw")+"×"+x[1]).join("  ")).join("<br>");
+  };
+
+  box.querySelectorAll(".step button").forEach(b=>{
+    b.onclick=()=>{ const a=b.dataset.a;
+      if(a==="r1") r=Math.min(r+1,100); else if(a==="r-1") r=Math.max(r-1,1);
+      else w=Math.max(0, Math.round((w+parseFloat(a))*2)/2);
+      refresh(); };
+  });
+  box.querySelector(".plates").onclick=e=>{
+    if(e.target.tagName==="B"){ barW = barW===45?55:45; LS.set("wt_bar",barW); refresh(); } };
+  box.querySelector(".logbtn").onclick=()=>{
+    local.push({ id:crypto.randomUUID(), logged_at:new Date().toISOString(),
+      session_date:todayISO(), exercise:name, weight_lb:w||null, reps:r,
+      source:"app", synced:false });
+    saveLocal(); sync(); refresh();
+    startTimer(/5×3|4×5/.test(item.load||"")?180:90, name);
+  };
+  refresh();
+  refreshers[name] = refresh;
+  detail.insertBefore(box, detail.firstChild);
+}
+
+function opened(item){
+  const h=hist[item.n];
+  if(!h || Date.now()-h.at > 6*3600e3) fetchHist(item.n).then(()=>refreshers[item.n]?.());
+}
+
+/* ---------- auth ---------- */
+function authRow(){
+  const el=document.getElementById("authrow"); if(!el) return;
+  const pend = local.filter(s=>!s.synced).length + dels.length;
+  if(session){
+    el.innerHTML = "sync on · "+session.user.email+(pend?" · <b style='color:var(--sub)'>"+pend+" pending</b>":" · up to date");
+    return;
+  }
+  el.innerHTML = 'sync off'+(pend?' · '+pend+' sets waiting':'')+' · <a id="signin">sign in</a>';
+  el.querySelector("#signin").onclick=()=>{
+    el.innerHTML = '<input id="em" type="email" placeholder="email" value="kylelhk@gmail.com">'+
+      '<button id="send">Send code</button>';
+    el.querySelector("#send").onclick=async()=>{
+      const email=el.querySelector("#em").value.trim();
+      const {error}=await sb.auth.signInWithOtp({email, options:{shouldCreateUser:false}});
+      if(error){ el.append(" — "+error.message); return; }
+      el.innerHTML='<input id="code" inputmode="numeric" placeholder="6-digit code">'+
+        '<button id="ver">Verify</button>';
+      el.querySelector("#ver").onclick=async()=>{
+        const {data,error}=await sb.auth.verifyOtp({email, token:el.querySelector("#code").value.trim(), type:"email"});
+        if(error){ el.append(" — "+error.message); return; }
+        session=data.session; sync();
+      };
+    };
+  };
+}
+
+sb.auth.onAuthStateChange((_e,s)=>{ session=s; authRow(); if(s) sync(); });
+window.addEventListener("online", sync);
+
+window.WT = { decorate, opened, authRow };
+render();
+sync();
 </script>
 </body>
 </html>
