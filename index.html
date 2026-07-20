@@ -736,7 +736,7 @@ function decorate(detail, item){
   box.className="logger";
   const h=hist[name];
   const last = todaySets(name).at(-1) || (h?.last ? {weight_lb:h.last.sets.at(-1)[0], reps:h.last.sets.at(-1)[1]} : null);
-  let w = last?.weight_lb ?? 0, r = last?.reps ?? 5;
+  let w = last?.weight_lb ?? 0, r = last?.reps ?? 5, touched = false;
 
   box.innerHTML =
     '<div class="log-row">'+
@@ -753,6 +753,9 @@ function decorate(detail, item){
 
   const q=s=>box.querySelector(s);
   const refresh=()=>{
+    if(!touched && w===0 && !todaySets(name).length && hist[name]?.last){
+      const ls=hist[name].last.sets.at(-1); w=ls[0]??0; r=ls[1]??r;
+    }
     q(".wv").textContent = w%1 ? w.toFixed(1) : w;
     q(".rv").textContent = r;
     q(".plates").innerHTML = BARBELL.has(name)&&w>0 ?
@@ -788,7 +791,7 @@ function decorate(detail, item){
   };
 
   box.querySelectorAll(".step button").forEach(b=>{
-    b.onclick=()=>{ const a=b.dataset.a;
+    b.onclick=()=>{ const a=b.dataset.a; touched=true;
       if(a==="r1") r=Math.min(r+1,100); else if(a==="r-1") r=Math.max(r-1,1);
       else w=Math.max(0, Math.round((w+parseFloat(a))*2)/2);
       refresh(); };
