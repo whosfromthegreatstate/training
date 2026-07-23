@@ -1073,13 +1073,15 @@ function authRow(){
   completeBar();
   const el=document.getElementById("authrow"); if(!el) return;
   const pend = local.filter(s=>!s.synced).length + dels.length + sessq.length;
+  const coach=' · <a href="https://claude.ai/project/019f8da0-3f15-7083-9ac5-7d4738be6b9d" '+
+    'style="color:var(--signal)" rel="noopener">coach</a>';
   if(session){
     el.innerHTML = "sync on · "+session.user.email+(pend?" · <b style='color:var(--sub)'>"+pend+" pending</b>":" · up to date")+
-      ' · <a id="histlink">history</a>';
+      ' · <a id="histlink">history</a>'+coach;
     el.querySelector("#histlink").onclick=openHist;
     return;
   }
-  el.innerHTML = 'sync off'+(pend?' · '+pend+' sets waiting':'')+' · <a id="signin">sign in</a>';
+  el.innerHTML = 'sync off'+(pend?' · '+pend+' sets waiting':'')+' · <a id="signin">sign in</a>'+coach;
   el.querySelector("#signin").onclick=()=>{
     el.innerHTML = '<input id="em" type="email" placeholder="email" value="kylelhk@gmail.com">'+
       '<button id="send">Send code</button>';
