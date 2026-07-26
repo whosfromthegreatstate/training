@@ -292,6 +292,11 @@ const DAYS = {
      sub:"Loads the legs with the trunk removed. The clean read on your leg strength.",
      cues:["Your trunk has always failed first. This is the lift that tells the truth","Stand on blocks so the plates clear the floor","Full range, no lockout slam"],
      demo:yt("cable belt squat home gym setup")},
+    {n:"Knee extension", load:"3×12", unit:"50–70", gear:"Cable + ankle strap",
+     swap:"The bench attachment broke — <strong>cable ankle strap on the low pulley</strong> is the fix ($20, top of the buy list). Until it arrives: <strong>band around the ankle</strong>, anchored low behind you. Either way put the anchor <strong>directly under the knee</strong> — anchored far behind you, the cable runs parallel to the shin at lockout and torque dies exactly where you need it. A band partly fixes this by itself: tension climbs as you extend.",
+     sub:"Permanent. Knee pain returned when these stopped — this is injury-prevention work, not filler.",
+     cues:["Full extension, <strong>2s pause at the top</strong> — the lockout is the part that matters","251 sets logged since 2017, last at 50×12. Build back, then add","Each leg separately. Note any left/right gap"],
+     demo:yt("cable ankle strap knee extension seated")},
     {n:"Seated calf raise", load:"3×15", unit:"", new:true, gear:"Bench + plates",
      sub:"Soleus. Never trained. Primary ankle-stiffness contributor in a jump.",
      cues:["Sit on the bench, plates or a loaded bar across your knees, balls of feet on a plate","<strong>Seated</strong> hits soleus; standing hits gastroc. You need seated","Full stretch at the bottom, pause at the top","A soft ankle is a hard ceiling on your vertical"],
@@ -490,15 +495,16 @@ const MOBILITY = [
 const GEAR = {
   have:["Barbell","Yukon (buffalo) bar","Plenty of rubber plates","Squat rack","Bench","Pull-up rack","Cable machine (dual pulley)","Adjustable DBs to ~35 lb","Bands","Ab wheel","Ab straps","Thin foam mats"],
   need:[
+    ["Cable ankle strap","Knee extensions — attachment broke, these are permanent","band around the ankle","~$20"],
     ["Soft plyo box 20/24/30","Drop jumps + altitude landings","bench works for now","~$130"],
     ["Lifting straps","Deadlift — grip is your cap","hook or mixed grip","~$15"],
-    ["Loadable DB handles","Carries, split squats, goblet","45 lb plates by the rim","~$60"],
     ["Gym rings, 32mm","Muscle-up goal","bar transitions","~$40"],
     ["Dip belt","Belt squats + weighted pull-ups","DB between feet","~$30"],
+    ["Loadable DB handles","Carries, split squats, goblet","45 lb plates by the rim","~$60"],
     ["Rubber stall mat","Landing surface","thin carpet, half sets","~$50"],
     ["Safety squat bar","Day 1 primary lift","Yukon bar","~$250"]
   ],
-  broken:["Knee extension attachment → use a cable ankle strap on the low pulley instead"]
+  broken:["Knee extension attachment (broke) → cable ankle strap / band version lives in Day 1 now"]
 };
 
 /* ============================================================
@@ -710,8 +716,13 @@ const saveLocal = () => { LS.set("wt_local", local); LS.set("wt_dels", dels); LS
 
 /* ---------- sync ---------- */
 let session = null;
+let syncing = false;   // in-flight lock: concurrent sync() calls double-inserted queued rows once
 async function sync(){
-  if(!session || !navigator.onLine) { authRow(); return; }
+  if(!session || !navigator.onLine || syncing) { authRow(); return; }
+  syncing = true;
+  try { await syncBody(); } finally { syncing = false; }
+}
+async function syncBody(){
   const pending = local.filter(s=>!s.synced);
   if(pending.length){
     const rows = pending.map(({synced,...r})=>r);
