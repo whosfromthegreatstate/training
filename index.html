@@ -125,6 +125,11 @@ ol.list{list-style:none;margin:0;padding:0}
 .scrubval .num{font-size:26px;font-weight:800;line-height:1.1}
 .scrubval small{font-size:9px;color:var(--dim);letter-spacing:.14em;font-weight:500}
 .scrubval.scrubbing{border-color:var(--signal)}
+.swbtn{flex:0 0 56px;min-height:56px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:12px;color:var(--cold);font-size:17px;cursor:pointer}
+.swbtn.run{background:var(--cold);color:#0F1319;border-color:var(--cold)}
+.timelink{display:inline-block;margin:2px 0 6px;font-family:var(--mono);font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--dim);cursor:pointer;text-decoration:underline dotted}
 .actrow{display:flex;gap:8px;margin-top:10px}
 .logbtn{flex:1;min-height:52px;background:var(--signal);color:#0F1319;border:0;
   border-radius:10px;font-family:var(--mono);font-size:13px;font-weight:800;letter-spacing:.12em;cursor:pointer}
@@ -748,7 +753,7 @@ async function fetchHist(name){
   if(!session || !navigator.onLine) return;
   const names = [name, ...(ALIAS[name]||[])];
   const { data, error } = await sb.from(TABLE)
-    .select("id,logged_at,session_date,exercise,weight_lb,reps")
+    .select("id,logged_at,session_date,exercise,weight_lb,reps,duration_sec")
     .in("exercise", names).order("logged_at",{ascending:false}).limit(1000);
   if(error || !data) return;
   const sane = data.filter(r=>r.weight_lb==null || r.weight_lb<600);  // typo guard
@@ -759,15 +764,18 @@ async function fetchHist(name){
     const best = Math.max(...sessions[d].map(r=>e1rm(r.weight_lb,r.reps)||0));
     const vol = sessions[d].reduce((a,r)=>a+(r.weight_lb||0)*(r.reps||0),0);
     const maxw = Math.max(0,...sessions[d].map(r=>r.weight_lb||0));
-    return { d, e1: best, vol: Math.round(vol), maxw };
+    const maxs = Math.max(0,...sessions[d].map(r=>r.duration_sec||0));
+    return { d, e1: best, vol: Math.round(vol), maxw, maxs };
   }).reverse();
   let best = {e1:0,d:null,w:null,r:null};
   sane.forEach(r=>{ const e=e1rm(r.weight_lb,r.reps); if(e && e>best.e1) best={e1:e,d:r.session_date,w:r.weight_lb,r:r.reps}; });
   const t = todayISO();
   const lastDay = days.find(d=>d<t);
+  const trip = r => [r.weight_lb, r.reps, r.duration_sec];
   hist[name] = { at: Date.now(), spark, best,
-    last: lastDay ? { d:lastDay, sets: sessions[lastDay].slice().reverse().map(r=>[r.weight_lb,r.reps]) } : null,
-    recent: days.map(d=>({ d, sets: sessions[d].slice().reverse().map(r=>[r.weight_lb,r.reps]) })) };
+    hasSecs: sane.some(r=>r.duration_sec),
+    last: lastDay ? { d:lastDay, sets: sessions[lastDay].slice().reverse().map(trip) } : null,
+    recent: days.map(d=>({ d, sets: sessions[d].slice().reverse().map(trip) })) };
   LS.set("wt_hist", hist);
 }
 
@@ -801,13 +809,23 @@ document.getElementById("timer-x").onclick=()=>{ clearInterval(tInt); tb.classLi
 /* ---------- logger UI ---------- */
 const todaySets = name => local.filter(s=>s.exercise===name && s.session_date===todayISO());
 const refreshers = {};   // exercise name -> refresh fn of the currently rendered logger
+const fmtSet = x => {
+  let t = x.weight_lb!=null ? String(x.weight_lb) : "bw";
+  if(x.reps) t += "×"+x.reps;
+  if(x.duration_sec) t += " "+x.duration_sec+"s";
+  return t;
+};
 
 function decorate(detail, item){
   const name=item.n, box=document.createElement("div");
   box.className="logger";
   const h=hist[name];
-  const last = todaySets(name).at(-1) || (h?.last ? {weight_lb:h.last.sets.at(-1)[0], reps:h.last.sets.at(-1)[1]} : null);
-  let w = last?.weight_lb ?? 0, r = last?.reps ?? 5, touched = false;
+  const hl0 = h?.last?.sets.at(-1);
+  const last = todaySets(name).at(-1) || (hl0 ? {weight_lb:hl0[0], reps:hl0[1], duration_sec:hl0[2]} : null);
+  let w = last?.weight_lb ?? 0, r = last?.reps ?? 5, s = last?.duration_sec ?? 0;
+  let touched = false, touchedR = false, swInt = null;
+  const timed = /sec/.test(item.unit||"") || !!h?.hasSecs ||
+    todaySets(name).some(x=>x.duration_sec) || !!last?.duration_sec;
 
   box.innerHTML =
     '<div class="wrow"><button class="hbtn" data-k="w" data-d="-1">−</button>'+
@@ -816,6 +834,11 @@ function decorate(detail, item){
     '<div class="wrow"><button class="hbtn" data-k="r" data-d="-1">−</button>'+
       '<div class="scrubval" data-k="r"><span class="num rv"></span><small>REPS</small></div>'+
       '<button class="hbtn" data-k="r" data-d="1">+</button></div>'+
+    '<div class="wrow trow" style="display:none"><button class="hbtn" data-k="s" data-d="-1">−</button>'+
+      '<div class="scrubval" data-k="s"><span class="num sv"></span><small>SEC</small></div>'+
+      '<button class="hbtn" data-k="s" data-d="1">+</button>'+
+      '<button class="swbtn" title="stopwatch">▶</button></div>'+
+    '<a class="timelink">+ time</a>'+
     '<div class="plates"></div><div class="e1rm"></div><div class="ghost"></div>'+
     '<div class="actrow"><button class="logbtn">LOG SET</button><button class="tbtn" title="rest timer">⏱</button></div>'+
     '<div class="chips"></div><div class="editlinks" style="display:none">'+
@@ -823,30 +846,33 @@ function decorate(detail, item){
     '<a class="statslink">Stats + history ›</a>';
   let editing = null;   // id of today's set being edited
 
-  const q=s=>box.querySelector(s);
+  const q=x=>box.querySelector(x);
+  const showTime=()=>{ q(".trow").style.display="flex"; q(".timelink").style.display="none"; };
   const refresh=()=>{
     if(!touched && w===0 && !todaySets(name).length && hist[name]?.last){
-      const ls=hist[name].last.sets.at(-1); w=ls[0]??0; r=ls[1]??r;
+      const ls=hist[name].last.sets.at(-1); w=ls[0]??0; r=ls[1]??r; s=ls[2]??s;
     }
     q(".wv").textContent = w%1 ? w.toFixed(1) : w;
     q(".rv").textContent = r;
+    q(".sv").textContent = Math.round(s);
     q(".plates").innerHTML = BARBELL.has(name)&&w>0 ?
       'per side: '+plates(w)+' · <b>bar '+barW+'</b>' : "";
     const e=e1rm(w||null,r), hb=hist[name]?.best;
     q(".e1rm").innerHTML = (e?('this set e1RM <b>'+e+'</b>'):'') +
       (hb?.e1 ? (e?' · ':'')+'best '+hb.e1+' ('+hb.d+')' : '');
     const hl=hist[name]?.last;
-    q(".ghost").textContent = hl ? "last · "+hl.d+" · "+hl.sets.map(s=>(s[0]??"bw")+"×"+s[1]).join("  ") : "";
+    q(".ghost").textContent = hl ? "last · "+hl.d+" · "+hl.sets.map(x=>fmtSet({weight_lb:x[0],reps:x[1],duration_sec:x[2]})).join("  ") : "";
     q(".logbtn").textContent = editing ? "UPDATE SET" : "LOG SET";
     q(".editlinks").style.display = editing ? "block" : "none";
     const chips=q(".chips"); chips.innerHTML="";
-    todaySets(name).forEach(s=>{
+    todaySets(name).forEach(x=>{
       const c=document.createElement("span");
-      c.className="chip"+(s.synced?"":" pend")+(editing===s.id?" editing":"");
-      c.textContent=(s.weight_lb??"bw")+"×"+s.reps;
+      c.className="chip"+(x.synced?"":" pend")+(editing===x.id?" editing":"");
+      c.textContent=fmtSet(x);
       c.onclick=()=>{   // tap a set to edit it; tap again to deselect
-        if(editing===s.id){ editing=null; }
-        else { editing=s.id; touched=true; w=s.weight_lb??0; r=s.reps; }
+        if(editing===x.id){ editing=null; }
+        else { editing=x.id; touched=true; w=x.weight_lb??0; r=x.reps??5; s=x.duration_sec??0;
+          if(x.duration_sec) showTime(); }
         refresh(); };
       chips.appendChild(c);
     });
@@ -854,7 +880,8 @@ function decorate(detail, item){
   };
 
   const adjust=(k,steps,fine)=>{ touched=true;
-    if(k==="r") r=Math.min(100,Math.max(1, r+steps));
+    if(k==="r"){ touchedR=true; r=Math.min(100,Math.max(1, r+steps)); }
+    else if(k==="s") s=Math.max(0, Math.round(s+steps*(fine?1:5)));
     else { const inc=fine?2.5:5; w=Math.max(0, Math.round((w+steps*inc)*2)/2); }
     refresh();
   };
@@ -887,18 +914,31 @@ function decorate(detail, item){
     local=local.filter(x=>x.id!==s.id); if(s.synced) dels.push(s.id);
     editing=null; saveLocal(); sync(); refresh(); };
   box.querySelector(".editlinks .can").onclick=()=>{ editing=null; refresh(); };
+  q(".timelink").onclick=showTime;
+  if(timed) showTime();
+  const swb=q(".swbtn");
+  swb.onclick=()=>{
+    if(swInt){ clearInterval(swInt); swInt=null; swb.textContent="▶"; swb.classList.remove("run"); refresh(); }
+    else { const t0=Date.now(); s=0;
+      swInt=setInterval(()=>{ s=Math.round((Date.now()-t0)/1000); q(".sv").textContent=s; },250);
+      swb.textContent="■"; swb.classList.add("run"); }
+  };
   box.querySelector(".logbtn").onclick=()=>{
+    if(swInt) swb.onclick();          // stop a running stopwatch and take its time
+    const secs = s>0 ? Math.round(s) : null;
+    const reps = (secs && !touchedR) ? null : r;   // pure hold: no phantom rep count
+    if(!reps && !secs) return;
     if(editing){
-      const s=local.find(x=>x.id===editing);
-      if(s){ s.weight_lb=w||null; s.reps=r; s.synced=false; }
+      const x=local.find(y=>y.id===editing);
+      if(x){ x.weight_lb=w||null; x.reps=reps; x.duration_sec=secs; x.synced=false; }
       editing=null; saveLocal(); sync(); refresh(); return;
     }
     if(!LS.get("wt_sess"))
       LS.set("wt_sess", { id:crypto.randomUUID(), start:new Date().toISOString(), d:todayISO() });
     local.push({ id:crypto.randomUUID(), logged_at:new Date().toISOString(),
-      session_date:todayISO(), exercise:name, weight_lb:w||null, reps:r,
-      source:"app", synced:false });
-    saveLocal(); sync(); refresh();
+      session_date:todayISO(), exercise:name, weight_lb:w||null, reps:reps,
+      duration_sec:secs, source:"app", synced:false });
+    touchedR=false; saveLocal(); sync(); refresh();
     startTimer(/5×3|4×5/.test(item.load||"")?180:90, name);
   };
   refresh();
@@ -949,7 +989,7 @@ async function completeWorkout(){
   const s=curSess(); if(!s) return;
   const sets=local.filter(x=>x.session_date===todayISO() && x.logged_at>=s.start);
   const dur=Math.max(60, Math.round((Date.now()-new Date(s.start))/1000));
-  const vol=Math.round(sets.reduce((a,x)=>a+(x.weight_lb||0)*x.reps,0));
+  const vol=Math.round(sets.reduce((a,x)=>a+(x.weight_lb||0)*(x.reps||0),0));
   const row={ id:s.id, session_date:todayISO(), started_at:s.start,
     completed_at:new Date().toISOString(), duration_sec:dur,
     sets_count:sets.length, volume_lb:vol, source:"app" };
@@ -998,10 +1038,10 @@ async function openHist(){
 async function openDay(d){
   const sh=document.getElementById("sheet");
   sh.innerHTML='<h3>'+d+'</h3><div class="sub">loading…</div>';
-  const { data } = await sb.from(TABLE).select("exercise,weight_lb,reps,logged_at")
+  const { data } = await sb.from(TABLE).select("exercise,weight_lb,reps,duration_sec,logged_at")
     .eq("session_date", d).order("logged_at");
   const by={};
-  (data||[]).forEach(r=>{ (by[r.exercise] ??= []).push((r.weight_lb??"bw")+"×"+r.reps); });
+  (data||[]).forEach(r=>{ (by[r.exercise] ??= []).push(fmtSet(r)); });
   sh.innerHTML='<a class="backlink">‹ all workouts</a><h3>'+d+'</h3>'+
     '<table class="sesstable">'+Object.entries(by).map(([ex,sets])=>
       '<tr><td>'+ex+'</td><td>'+sets.join("  ")+'</td></tr>').join("")+'</table>';
@@ -1032,7 +1072,7 @@ function openSheet(name, isRetry){
   const tSets=todaySets(name);
   const todayBest=Math.max(0,...tSets.map(s=>e1rm(s.weight_lb,s.reps)||0));
   const totalSets=(h?.recent||[]).reduce((a,s)=>a+s.sets.length,0);
-  const todayVol=Math.round(tSets.reduce((a,s)=>a+(s.weight_lb||0)*s.reps,0));
+  const todayVol=Math.round(tSets.reduce((a,s)=>a+(s.weight_lb||0)*(s.reps||0),0));
   /* time-scaled line chart with subtle labeled reference lines */
   const lineSvg=(pts,color)=>{
     const W=320,H=86,PL=4,PR=30,PT=8,PB=15;
@@ -1060,11 +1100,14 @@ function openSheet(name, isRetry){
     if(sp.some(p=>p.maxw>0))
       charts += '<div class="chartlbl">top weight of day · peak '+Math.max(...sp.map(p=>p.maxw||0))+'</div>'+
         lineSvg(P("maxw"), "#E88B4A");
+    if(sp.some(p=>p.maxs>0))
+      charts += '<div class="chartlbl">longest hold (sec) · peak '+Math.max(...sp.map(p=>p.maxs||0))+'s</div>'+
+        lineSvg(P("maxs"), "#7ee0a3");
     charts += '<div class="chartlbl">session volume (lb) · peak '+Math.max(...sp.map(p=>p.vol||0)).toLocaleString()+'</div>'+
       lineSvg(P("vol"), "#FFC93C");
   }
   const rows=(h?.recent||[]).map(s=>"<tr><td>"+s.d+"</td><td>"+
-    s.sets.map(x=>(x[0]??"bw")+"×"+x[1]).join("  ")+"</td></tr>").join("");
+    s.sets.map(x=>fmtSet({weight_lb:x[0],reps:x[1],duration_sec:x[2]})).join("  ")+"</td></tr>").join("");
   sh.innerHTML =
     '<h3>'+name+'</h3><div class="sub">'+new Date().toDateString()+'</div>'+
     '<div class="statrow">'+
