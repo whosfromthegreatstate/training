@@ -199,12 +199,16 @@ ol.list{list-style:none;margin:0;padding:0}
   display:none;align-items:center;justify-content:space-between;gap:10px}
 .timerbar.on{display:flex}
 .timerbar.done{background:var(--signal);color:#0F1319}
-.timerbar .t{font-family:var(--mono);font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.timerbar.pulse{animation:timerPulse .6s ease}
+@keyframes timerPulse{0%{box-shadow:0 0 0 0 rgba(255,201,60,.55)}100%{box-shadow:0 0 0 16px rgba(255,201,60,0)}}
+.timerbar .t{font-family:var(--mono);font-size:32px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--signal)}
+.timerbar.done .t{color:#0F1319}
 .timerbar .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .timerbar.done .lbl{color:#0F1319}
 .timerbar button{min-height:40px;background:var(--surface);border:1px solid var(--line);border-radius:8px;
   color:var(--text);font-family:var(--mono);font-size:12px;font-weight:700;padding:0 12px;cursor:pointer}
 .timerbar.done button{background:#0F1319;color:var(--signal);border-color:#0F1319}
+.timerbar button.tap{background:var(--signal);color:#0F1319;border-color:var(--signal)}
 .authrow{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em}
 .authrow a{color:var(--cold);cursor:pointer;text-decoration:underline}
 .authrow input{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;color:var(--text);
@@ -797,6 +801,7 @@ const tb = document.getElementById("timerbar");
 let tLeft=0, tInt=null;
 function startTimer(sec,label){
   clearInterval(tInt); tLeft=sec; tb.classList.add("on"); tb.classList.remove("done");
+  tb.classList.remove("pulse"); void tb.offsetWidth; tb.classList.add("pulse");
   document.getElementById("timer-lbl").textContent = "Rest · "+label;
   const draw=()=>{ document.getElementById("timer-t").textContent =
     Math.floor(Math.max(tLeft,0)/60)+":"+String(Math.max(tLeft,0)%60).padStart(2,"0"); };
@@ -807,8 +812,9 @@ function startTimer(sec,label){
       if(navigator.vibrate) navigator.vibrate([200,100,200]); }
   },1000);
 }
-document.getElementById("timer-add").onclick=()=>{ tLeft+=30; tb.classList.remove("done"); };
-document.getElementById("timer-x").onclick=()=>{ clearInterval(tInt); tb.classList.remove("on"); };
+const tapFlash=el=>{ el.classList.add("tap"); setTimeout(()=>el.classList.remove("tap"),180); };
+document.getElementById("timer-add").onclick=e=>{ tLeft+=30; tb.classList.remove("done"); tapFlash(e.currentTarget); };
+document.getElementById("timer-x").onclick=e=>{ tapFlash(e.currentTarget); clearInterval(tInt); tb.classList.remove("on"); };
 
 /* ---------- logger UI ---------- */
 const todaySets = name => local.filter(s=>s.exercise===name && s.session_date===todayISO());
@@ -937,8 +943,10 @@ function decorate(detail, item){
       if(x){ x.weight_lb=w||null; x.reps=reps; x.duration_sec=secs; x.synced=false; }
       editing=null; saveLocal(); sync(); refresh(); return;
     }
-    if(!LS.get("wt_sess"))
+    if(!LS.get("wt_sess")){
       LS.set("wt_sess", { id:crypto.randomUUID(), start:new Date().toISOString(), d:todayISO() });
+      acquireWakeLock();
+    }
     local.push({ id:crypto.randomUUID(), logged_at:new Date().toISOString(),
       session_date:todayISO(), exercise:name, weight_lb:w||null, reps:reps,
       duration_sec:secs, source:"app", synced:false });
@@ -954,6 +962,20 @@ function opened(item){
   const h=hist[item.n];
   if(!h || Date.now()-h.at > 6*3600e3) fetchHist(item.n).then(()=>refreshers[item.n]?.());
 }
+
+/* ---------- screen wake lock (active session keeps display on) ---------- */
+let wakeLock = null;
+async function acquireWakeLock(){
+  if(!("wakeLock" in navigator) || wakeLock) return;
+  try{ wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", ()=>{ wakeLock=null; }); }
+  catch{ wakeLock=null; }
+}
+function releaseWakeLock(){ if(wakeLock){ wakeLock.release().catch(()=>{}); wakeLock=null; } }
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState==="visible" && curSess()) acquireWakeLock();
+  else releaseWakeLock();
+});
 
 /* ---------- workout clock + complete ---------- */
 const fmtDur = s => s>=3600 ? Math.floor(s/3600)+"h "+Math.floor(s%3600/60)+"m" : Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
@@ -998,6 +1020,7 @@ async function completeWorkout(){
     completed_at:new Date().toISOString(), duration_sec:dur,
     sets_count:sets.length, volume_lb:vol, source:"app" };
   localStorage.removeItem("wt_sess");
+  releaseWakeLock();
   let num=null;
   if(session && navigator.onLine){
     const { error } = await sb.from("workout_sessions").upsert(row, { onConflict:"id" });
