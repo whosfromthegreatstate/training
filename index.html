@@ -509,6 +509,7 @@ const GEAR = {
   have:["Barbell","Yukon (buffalo) bar","Plenty of rubber plates","Squat rack","Bench","Pull-up rack","Cable machine (dual pulley)","Adjustable DBs to ~35 lb","Bands","Ab wheel","Ab straps","Thin foam mats"],
   need:[
     ["Cable ankle strap","Knee extensions — attachment broke, these are permanent","band around the ankle","~$20"],
+    ["Landmine attachment","Rotational presses + rows, T-spine friendly","cable chops","~$35"],
     ["Soft plyo box 20/24/30","Drop jumps + altitude landings","bench works for now","~$130"],
     ["Lifting straps","Deadlift — grip is your cap","hook or mixed grip","~$15"],
     ["Gym rings, 32mm","Muscle-up goal","bar transitions","~$40"],
@@ -1182,6 +1183,7 @@ window.addEventListener("online", sync);
 window.WT = { decorate, opened, authRow, completeBar, uiOpen, uiClose };
 render();
 sync();
+if(curSess()) acquireWakeLock();   // app reopened mid-workout: keep the screen on
 </script>
 </body>
 </html>
