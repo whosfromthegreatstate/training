@@ -125,6 +125,16 @@ ol.list{list-style:none;margin:0;padding:0}
 .scrubval .num{font-size:26px;font-weight:800;line-height:1.1}
 .scrubval small{font-size:9px;color:var(--dim);letter-spacing:.14em;font-weight:500}
 .scrubval.scrubbing{border-color:var(--signal)}
+.scrubval .numin{width:100%;background:none;border:0;outline:0;color:var(--signal);text-align:center;
+  font:800 26px/1.1 var(--mono);font-variant-numeric:tabular-nums;padding:0}
+.prev{margin-top:22px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.prev:empty{display:none}
+.prev .ph{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.prev .ph b{color:var(--cold);font-weight:700}
+.prev .pr{display:flex;gap:10px;font-family:var(--mono);font-size:11.5px;line-height:1.6;padding:3px 0;border-top:1px solid var(--line)}
+.prev .ph + .pr{border-top:0}
+.prev .pn{flex:0 0 38%;min-width:0;color:var(--text);overflow-wrap:anywhere}
+.prev .ps{flex:1;min-width:0;color:var(--muted);overflow-wrap:anywhere}
 .swbtn{flex:0 0 56px;min-height:56px;background:var(--surface-2);border:1px solid var(--line);
   border-radius:12px;color:var(--cold);font-size:17px;cursor:pointer}
 .swbtn.run{background:var(--cold);color:#0F1319;border-color:var(--cold)}
@@ -652,6 +662,7 @@ function render(){
   } else {
     el("title").textContent=day.name;
     el("duration").textContent=day.dur+(day.note?" · "+day.note:"");
+    if(window.WT) WT.prevSession(content, selected);
     const c={v:0};
     content.appendChild(blockNode(OPENER,c));
     day.blocks.forEach(b=>content.appendChild(blockNode(b,c)));
@@ -840,7 +851,7 @@ function decorate(detail, item){
 
   box.innerHTML =
     '<div class="wrow"><button class="hbtn" data-k="w" data-d="-1">−</button>'+
-      '<div class="scrubval" data-k="w"><span class="num wv"></span><small>LB · TAP ±5 · HOLD ±2½ · DRAG</small></div>'+
+      '<div class="scrubval" data-k="w"><span class="num wv"></span><small>LB · TAP TO TYPE · ±5 · HOLD ±2½</small></div>'+
       '<button class="hbtn" data-k="w" data-d="1">+</button></div>'+
     '<div class="wrow"><button class="hbtn" data-k="r" data-d="-1">−</button>'+
       '<div class="scrubval" data-k="r"><span class="num rv"></span><small>REPS</small></div>'+
@@ -893,7 +904,10 @@ function decorate(detail, item){
   const adjust=(k,steps,fine)=>{ touched=true;
     if(k==="r"){ touchedR=true; r=Math.min(100,Math.max(1, r+steps)); }
     else if(k==="s") s=Math.max(0, Math.round(s+steps*(fine?1:5)));
-    else { const inc=fine?2.5:5; w=Math.max(0, Math.round((w+steps*inc)*2)/2); }
+    else if(fine) w=Math.max(0, Math.round((w+steps*2.5)*2)/2);
+    else {   // coarse tap snaps to round 5s: 172.5 → 175 / 170, never stuck on a ×2.5 offset
+      const b = steps>0 ? Math.floor(w/5) : Math.ceil(w/5);
+      w=Math.max(0, (b+steps)*5); }
     refresh();
   };
   /* tap = one coarse step; hold = accelerating fine steps */
@@ -909,13 +923,34 @@ function decorate(detail, item){
   });
   /* drag the value up/down to scrub in fine steps */
   box.querySelectorAll(".scrubval").forEach(v=>{
-    const k=v.dataset.k; let sy=null;
-    v.onpointerdown=e=>{ sy=e.clientY; v.classList.add("scrubbing"); v.setPointerCapture(e.pointerId); };
+    const k=v.dataset.k; let sy=null, moved=false;
+    v.onpointerdown=e=>{ if(e.target.tagName==="INPUT") return;
+      sy=e.clientY; moved=false; v.classList.add("scrubbing"); v.setPointerCapture(e.pointerId); };
     v.onpointermove=e=>{ if(sy==null) return;
       const steps=Math.trunc((sy-e.clientY)/14);
-      if(steps){ adjust(k,steps,true); sy=e.clientY; if(navigator.vibrate) navigator.vibrate(3); } };
-    v.onpointerup=v.onpointercancel=()=>{ sy=null; v.classList.remove("scrubbing"); };
+      if(steps){ moved=true; adjust(k,steps,true); sy=e.clientY; if(navigator.vibrate) navigator.vibrate(3); } };
+    v.onpointercancel=()=>{ sy=null; v.classList.remove("scrubbing"); };
+    v.onmousedown=e=>{ if(e.target.tagName!=="INPUT") e.preventDefault(); };   // compat mousedown after a tap would blur the keypad input
+    v.onpointerup=e=>{ const tap = sy!=null && !moved;
+      sy=null; v.classList.remove("scrubbing");
+      if(tap && k==="w") typeW(v); };
   });
+  /* tap the weight to type it on the numeric keypad */
+  const typeW=v=>{
+    if(v.querySelector(".numin")) return;
+    const span=q(".wv"), inp=document.createElement("input");
+    inp.className="numin"; inp.type="text"; inp.inputMode="decimal"; inp.enterKeyHint="done";
+    inp.value = w ? (w%1 ? w.toFixed(1) : w) : "";
+    span.style.display="none"; v.insertBefore(inp, span);
+    let done=false;
+    const commit=()=>{ if(done) return; done=true;
+      const x=parseFloat(inp.value);
+      if(isFinite(x) && x>=0 && x<600){ w=Math.round(x*2)/2; touched=true; }
+      inp.remove(); span.style.display=""; refresh(); };
+    inp.onblur=commit;
+    inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } };
+    inp.focus(); inp.select();
+  };
   box.querySelector(".plates").onclick=e=>{
     if(e.target.tagName==="B"){ barW = barW===45?55:45; LS.set("wt_bar",barW); refresh(); } };
   box.querySelector(".tbtn").onclick=()=>startTimer(/5×3|4×5/.test(item.load||"")?180:90, name);
@@ -1043,6 +1078,52 @@ function celebrate(num, dur, vol, n){
   uiOpen();
   if(navigator.vibrate) navigator.vibrate([100,60,100,60,200]);
   setTimeout(()=>{ if(o.isConnected){ o.remove(); uiClose(); } }, 6000);
+}
+
+/* ---------- last time: previous session of this day type ---------- */
+/* Matched by exercises, not rotation math: the most recent past date that has
+   sets for >=2 of this day's exercises (opener excluded — it runs every day).
+   Survives day swaps and rotation re-anchoring. */
+let prevC = LS.get("wt_prev", {});
+const prevTried = {};   // one fetch per day per page load — no fetch->rerender loops
+function prevSession(content, dayKey){
+  const day = DAYS[dayKey]; if(!day) return;
+  const box = document.createElement("div"); box.className="prev";
+  content.appendChild(box);
+  const progNames = day.blocks.flatMap(b=>b.items.map(i=>i.n));
+  const toProg = {};
+  progNames.forEach(n=>{ toProg[n]=n; (ALIAS[n]||[]).forEach(a=>{ toProg[a]??=n; }); });
+  const draw = () => {
+    if(!box.isConnected) return;
+    const c = prevC[dayKey];
+    if(!c || !c.d){ box.innerHTML=""; return; }
+    const ago = Math.round((new Date(todayISO()+"T12:00")-new Date(c.d+"T12:00"))/864e5);
+    const nice = new Date(c.d+"T12:00").toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+    box.innerHTML = '<div class="ph">Last '+day.name+' · <b>'+nice+'</b> · '+ago+'d ago</div>'+
+      c.rows.map(([ex,sets])=>'<div class="pr"><span class="pn">'+ex+'</span><span class="ps">'+sets+'</span></div>').join("");
+  };
+  const go = async () => {
+    const c = prevC[dayKey], t = todayISO();
+    const fresh = c && c.t===t && Date.now()-c.at < 6*3600e3;
+    if(fresh || prevTried[dayKey] || !session || !navigator.onLine) { draw(); return; }
+    prevTried[dayKey] = true;
+    const { data, error } = await sb.from(TABLE)
+      .select("session_date,exercise,weight_lb,reps,duration_sec,logged_at")
+      .in("exercise", Object.keys(toProg)).lt("session_date", t)
+      .order("session_date",{ascending:false}).order("logged_at").limit(500);
+    if(error || !data){ draw(); return; }
+    const by = {};
+    data.filter(r=>r.weight_lb==null || r.weight_lb<600).forEach(r=>{
+      ((by[r.session_date] ??= {})[toProg[r.exercise]] ??= []).push(fmtSet(r)); });
+    const d = Object.keys(by).sort().reverse().find(d=>Object.keys(by[d]).length>=2);
+    prevC[dayKey] = { at:Date.now(), t, d:d||null,
+      rows: d ? progNames.filter(n=>by[d][n]).map(n=>[n, by[d][n].join("  ")]) : [] };
+    LS.set("wt_prev", prevC);
+    draw();
+  };
+  draw();
+  refreshers.__prev = ()=>go().catch(()=>{});   // re-run after sign-in / sync
+  go().catch(()=>{});
 }
 
 /* ---------- global history ---------- */
@@ -1180,7 +1261,7 @@ function authRow(){
 sb.auth.onAuthStateChange((_e,s)=>{ session=s; authRow(); if(s) sync(); });
 window.addEventListener("online", sync);
 
-window.WT = { decorate, opened, authRow, completeBar, uiOpen, uiClose };
+window.WT = { decorate, opened, authRow, completeBar, uiOpen, uiClose, prevSession };
 render();
 sync();
 if(curSess()) acquireWakeLock();   // app reopened mid-workout: keep the screen on
