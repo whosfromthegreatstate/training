@@ -1081,8 +1081,9 @@ function celebrate(num, dur, vol, n){
 }
 
 /* ---------- last time: previous session of this day type ---------- */
-/* Matched by exercises, not rotation math: the most recent past date that has
-   sets for >=2 of this day's exercises (opener excluded — it runs every day).
+/* Matched by exercises, not rotation math: the most recent past date with any
+   set of this day's exercises (no exercise repeats across days; opener names and
+   their aliases — e.g. "Hand stands" — are excluded since they run every day).
    Survives day swaps and rotation re-anchoring. */
 let prevC = LS.get("wt_prev", {});
 const prevTried = {};   // one fetch per day per page load — no fetch->rerender loops
@@ -1092,7 +1093,8 @@ function prevSession(content, dayKey){
   content.appendChild(box);
   const progNames = day.blocks.flatMap(b=>b.items.map(i=>i.n));
   const toProg = {};
-  progNames.forEach(n=>{ toProg[n]=n; (ALIAS[n]||[]).forEach(a=>{ toProg[a]??=n; }); });
+  const daily = new Set(OPENER.items.flatMap(i=>[i.n, ...(ALIAS[i.n]||[])]));
+  progNames.forEach(n=>{ toProg[n]=n; (ALIAS[n]||[]).forEach(a=>{ if(!daily.has(a)) toProg[a]??=n; }); });
   const draw = () => {
     if(!box.isConnected) return;
     const c = prevC[dayKey];
@@ -1115,7 +1117,7 @@ function prevSession(content, dayKey){
     const by = {};
     data.filter(r=>r.weight_lb==null || r.weight_lb<600).forEach(r=>{
       ((by[r.session_date] ??= {})[toProg[r.exercise]] ??= []).push(fmtSet(r)); });
-    const d = Object.keys(by).sort().reverse().find(d=>Object.keys(by[d]).length>=2);
+    const d = Object.keys(by).sort().at(-1);
     prevC[dayKey] = { at:Date.now(), t, d:d||null,
       rows: d ? progNames.filter(n=>by[d][n]).map(n=>[n, by[d][n].join("  ")]) : [] };
     LS.set("wt_prev", prevC);
