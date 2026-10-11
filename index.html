@@ -138,6 +138,12 @@ ol.list{list-style:none;margin:0;padding:0}
 .swbtn{flex:0 0 56px;min-height:56px;background:var(--surface-2);border:1px solid var(--line);
   border-radius:12px;color:var(--cold);font-size:17px;cursor:pointer}
 .swbtn.run{background:var(--cold);color:#0F1319;border-color:var(--cold)}
+.holdbig{display:none;margin:0 0 8px;padding:10px 0 8px;background:var(--bg);border:1px solid var(--cold);
+  border-radius:12px;text-align:center;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.holdbig.on{display:block}
+.holdbig .hn{display:block;font:800 72px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--cold)}
+.holdbig.cd .hn{color:var(--signal)}
+.holdbig small{display:block;margin-top:6px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--dim)}
 .timelink{display:inline-block;margin:2px 0 6px;font-family:var(--mono);font-size:10px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--dim);cursor:pointer;text-decoration:underline dotted}
 .actrow{display:flex;gap:8px;margin-top:10px}
@@ -859,7 +865,8 @@ function decorate(detail, item){
     '<div class="wrow trow" style="display:none"><button class="hbtn" data-k="s" data-d="-1">−</button>'+
       '<div class="scrubval" data-k="s"><span class="num sv"></span><small>SEC</small></div>'+
       '<button class="hbtn" data-k="s" data-d="1">+</button>'+
-      '<button class="swbtn" title="stopwatch">▶</button></div>'+
+      '<button class="swbtn" title="timed hold: 3-2-1 countdown, tap again to log">▶</button></div>'+
+    '<div class="holdbig"><span class="hn"></span><small></small></div>'+
     '<a class="timelink">+ time</a>'+
     '<div class="plates"></div><div class="e1rm"></div><div class="ghost"></div>'+
     '<div class="actrow"><button class="logbtn">LOG SET</button><button class="tbtn" title="rest timer">⏱</button></div>'+
@@ -962,15 +969,35 @@ function decorate(detail, item){
   box.querySelector(".editlinks .can").onclick=()=>{ editing=null; refresh(); };
   q(".timelink").onclick=showTime;
   if(timed) showTime();
-  const swb=q(".swbtn");
+  /* timed hold: ▶ = 3-2-1-GO countdown, then count up big; ■ (or tap the big number) = stop + auto-log */
+  const swb=q(".swbtn"), big=q(".holdbig");
+  let cdInt=null;
+  const beep=(f,ms)=>{ try{
+    const ac=beep.ac||(beep.ac=new (window.AudioContext||window.webkitAudioContext)());
+    const o=ac.createOscillator(), g=ac.createGain(); o.frequency.value=f; g.gain.value=.15;
+    o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+ms/1000); }catch(e){} };
+  const bigShow=(n,lbl,cd)=>{ big.className="holdbig on"+(cd?" cd":"");
+    big.querySelector(".hn").textContent=n; big.querySelector("small").textContent=lbl; };
+  const swReset=()=>{ clearInterval(cdInt); clearInterval(swInt); cdInt=swInt=null;
+    swb.textContent="▶"; swb.classList.remove("run"); big.className="holdbig"; };
+  const swGo=()=>{ const t0=Date.now(); s=0;
+    swInt=setInterval(()=>{ s=Math.round((Date.now()-t0)/1000);
+      q(".sv").textContent=s; bigShow(s||"GO",s?"SEC · TAP TO LOG":"",!s); },250); };
   swb.onclick=()=>{
-    if(swInt){ clearInterval(swInt); swInt=null; swb.textContent="▶"; swb.classList.remove("run"); refresh(); }
-    else { const t0=Date.now(); s=0;
-      swInt=setInterval(()=>{ s=Math.round((Date.now()-t0)/1000); q(".sv").textContent=s; },250);
-      swb.textContent="■"; swb.classList.add("run"); }
+    if(cdInt){ swReset(); refresh(); return; }                   // cancel during countdown
+    if(swInt){ swReset(); refresh(); if(s>0) box.querySelector(".logbtn").onclick(); return; }   // Done → log it
+    let n=3; swb.textContent="■"; swb.classList.add("run");
+    bigShow(n,"GET READY · TAP TO CANCEL",true); beep(660,120); if(navigator.vibrate) navigator.vibrate(60);
+    cdInt=setInterval(()=>{ n--;
+      if(n>0){ bigShow(n,"GET READY · TAP TO CANCEL",true); beep(660,120); if(navigator.vibrate) navigator.vibrate(60); return; }
+      clearInterval(cdInt); cdInt=null;
+      bigShow("GO","",true); beep(990,350); if(navigator.vibrate) navigator.vibrate(250);
+      swGo(); },1000);
   };
+  big.onclick=()=>swb.onclick();
   box.querySelector(".logbtn").onclick=()=>{
-    if(swInt) swb.onclick();          // stop a running stopwatch and take its time
+    if(cdInt){ swReset(); refresh(); return; }   // LOG SET mid-countdown just cancels it
+    if(swInt){ swReset(); refresh(); }          // stop a running hold and take its time
     const secs = s>0 ? Math.round(s) : null;
     const reps = (secs && !touchedR) ? null : r;   // pure hold: no phantom rep count
     if(!reps && !secs) return;
