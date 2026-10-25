@@ -731,6 +731,9 @@ const ALIAS = {
 };
 const BARBELL = new Set(["Squat","Bench press","Deadlift","Overhead press",
   "Romanian deadlift","Speed deadlift"]);
+const BAR_DEFAULT = { "Squat": 50 };   // Squat = Titan Yukon buffalo bar (50 lb); others a 45 lb straight bar
+const BAR_OPTS = [45, 50, 55];
+const barFor = n => bars[n] ?? BAR_DEFAULT[n] ?? 45;
 const todayISO = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 
 /* ---------- local store ---------- */
@@ -741,7 +744,7 @@ const LS = {
 let local = LS.get("wt_local", []);      // sets logged on this device
 let dels  = LS.get("wt_dels", []);       // ids deleted locally, pending remote delete
 let hist  = LS.get("wt_hist", {});       // per-exercise cache from server
-let barW  = LS.get("wt_bar", 45);
+let bars  = LS.get("wt_bars", {});      // per-exercise bar weight, set by tapping "bar N"
 let sessq = LS.get("wt_sessq", []);      // completed-workout rows pending sync
 const saveLocal = () => { LS.set("wt_local", local); LS.set("wt_dels", dels); LS.set("wt_sessq", sessq); };
 
@@ -807,7 +810,7 @@ async function fetchHist(name){
 
 /* ---------- math + plates ---------- */
 const e1rm = (w,r) => (w==null||!r) ? null : Math.round(w*(1+r/30));
-function plates(total){
+function plates(total, barW){
   let side = (total - barW)/2;
   if(side < 0) return "below bar weight";
   const out=[]; for(const p of [45,35,25,10,5,2.5]){ while(side>=p-0.01){ out.push(p); side-=p; } }
@@ -885,7 +888,7 @@ function decorate(detail, item){
     q(".rv").textContent = r;
     q(".sv").textContent = Math.round(s);
     q(".plates").innerHTML = BARBELL.has(name)&&w>0 ?
-      'per side: '+plates(w)+' · <b>bar '+barW+'</b>' : "";
+      'per side: '+plates(w, barFor(name))+' · <b>bar '+barFor(name)+'</b>' : "";
     const e=e1rm(w||null,r), hb=hist[name]?.best;
     q(".e1rm").innerHTML = (e?('this set e1RM <b>'+e+'</b>'):'') +
       (hb?.e1 ? (e?' · ':'')+'best '+hb.e1+' ('+hb.d+')' : '');
@@ -959,7 +962,8 @@ function decorate(detail, item){
     inp.focus(); inp.select();
   };
   box.querySelector(".plates").onclick=e=>{
-    if(e.target.tagName==="B"){ barW = barW===45?55:45; LS.set("wt_bar",barW); refresh(); } };
+    if(e.target.tagName==="B"){ const i=BAR_OPTS.indexOf(barFor(name));
+      bars[name]=BAR_OPTS[(i+1)%BAR_OPTS.length]; LS.set("wt_bars",bars); refresh(); } };
   box.querySelector(".tbtn").onclick=()=>startTimer(/5×3|4×5/.test(item.load||"")?180:90, name);
   box.querySelector(".statslink").onclick=()=>openSheet(name);
   box.querySelector(".editlinks .del").onclick=()=>{
